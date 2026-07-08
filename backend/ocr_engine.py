@@ -11,7 +11,7 @@ def init_ocr():
     if _ocr is None:
         from paddleocr import PaddleOCR
         # use_angle_cls=True 开启方向分类，应对轻微倾斜
-        _ocr = PaddleOCR(use_angle_cls=True, lang='ch')
+        _ocr = PaddleOCR(use_textline_orientation=True, lang='ch')
     return _ocr
 
 

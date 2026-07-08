@@ -38,6 +38,7 @@ def worker():
     print("OCR模型加载完成，后台工作线程已启动！")
 
     while True:
+        task_id = None
         try:
             # 1. 从队列取一个任务
             task_id = task_queue.get_next_task()
@@ -220,8 +221,6 @@ def export_result(task_id):
 @app.route('/clear_history', methods=['POST'])  # 额外彩蛋接口
 def clear_history():
     """清空历史记录（彩蛋功能）"""
-    # 注意：这里占位清空，等组员B实现BST的clear方法
-    global history_manager
     # 简单处理：重新初始化（仅占位，组员B会完善）
     return jsonify({"message": "历史记录已清空"}), 200
 

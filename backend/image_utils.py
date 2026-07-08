@@ -8,7 +8,7 @@ from history_manager import BSTHistory
 
 TXT_SAVE_DIR = "ocr_txt_output"
 os.makedirs(TXT_SAVE_DIR, exist_ok=True)
-ocr_engine = PaddleOCR(use_angle_cls=True, lang="ch", show_log=False)
+ocr_engine = PaddleOCR(use_textline_orientation=True, lang="ch")
 
 def process_image(img_path):
     img = cv2.imread(img_path)
@@ -45,6 +45,13 @@ def process_image(img_path):
     print(f"标注图片已保存：{box_img_save_path}")
     print(f"同排版文本文件已保存：{txt_path}")
     return word_boxes, full_text
+
+def crop_image(origin_path, save_path, x1, y1, x2, y2):
+    """裁剪图片并保存"""
+    img = Image.open(origin_path)
+    cropped = img.crop((int(x1), int(y1), int(x2), int(y2)))
+    cropped.save(save_path)
+    return save_path
 
 if __name__ == "__main__":
     history = BSTHistory()
