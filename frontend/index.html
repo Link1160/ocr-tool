@@ -7,11 +7,7 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- 全局消息弹窗容器 -->
-  <div id="messageContainer" style="position:fixed;top:20px;right:20px;z-index:9999;"></div>
-
   <div class="app" id="app">
-    <!-- 1. 顶部标题区 -->
     <header class="page-header" id="page-header">
       <h1 class="page-header__title title-sparkle" id="page-title">
         <span class="sparkle-field" aria-hidden="true">
@@ -29,13 +25,12 @@
 
     <div class="layout" id="main-layout">
       <main class="content" id="main-content">
-        <!-- 2. 拖拽上传区域 -->
         <section class="section" id="upload-section">
           <h2 class="text-16 section-title" id="upload-section-title">上传图片</h2>
-          <label class="upload-zone" id="dropZone" for="fileInput">
+          <label class="upload-zone" id="upload-zone" for="file-input">
             <input
               type="file"
-              id="fileInput"
+              id="file-input"
               class="file-input"
               accept="image/*"
               multiple
@@ -66,7 +61,6 @@
           </div>
         </section>
 
-        <!-- 3. 预览区（新增OCR文字框标注图展示） -->
         <div class="workspace" id="workspace">
           <section class="section" id="preview-section">
             <div class="section-header">
@@ -75,21 +69,17 @@
             </div>
             <div class="panel" id="preview-area">
               <div class="panel__empty" id="preview-empty">暂无图片，请先上传</div>
-              <!-- OCR文字框标注图片区域 -->
-              <div id="box-preview-wrap" hidden style="margin-bottom:12px;">
-                <p style="font-size:14px;margin:4px 0;color:#333;">文字识别框选图</p>
-                <img id="box-preview-img" style="max-width:100%;border:1px solid #ddd;border-radius:6px;" alt="文字区域框选图">
-              </div>
-              <!-- 原图预览区域 -->
               <div class="preview-grid" id="preview-grid" hidden></div>
             </div>
           </section>
 
-          <section class="section history-panel" id="historySidebar">
+          <section class="section history-panel" id="sidebar">
             <div class="section-header">
               <h2 class="text-16 section-title sidebar__title" id="sidebar-title">历史记录</h2>
-              <button type="button" class="btn-text" id="btn-clear-history">清空历史</button>
-              <button type="button" class="btn-text" id="historyBtn">展开/收起历史</button>
+              <div class="history-tools">
+                <button type="button" class="btn-text" id="btn-toggle-history">收起历史</button>
+                <button type="button" class="btn-text" id="btn-clear-history">清空历史</button>
+              </div>
             </div>
 
             <div class="history-content">
@@ -97,39 +87,48 @@
                 <input
                   type="search"
                   class="search-input"
-                  id="historyInput"
+                  id="history-search"
                   placeholder="时间、文件类型、关键词搜索"
                   autocomplete="off"
                 >
-                <button type="button" class="btn btn-primary" id="searchBtn">搜索</button>
+                <button type="button" class="btn btn-primary" id="btn-search">搜索</button>
               </div>
 
-              <ul class="history-list" id="historyList">
+              <ul class="history-list" id="history-list">
                 <li class="history-list__empty" id="history-empty">暂无历史记录</li>
               </ul>
             </div>
+
           </section>
         </div>
+
       </main>
 
-      <!-- 5. 右侧识别结果边栏 -->
       <aside class="result-sidebar">
         <section class="section" id="result-section">
           <div class="section-header result-header">
-            <h2 class="result-title" id="result-section-title">识别结果</h2>
+            <h2 class="result-title" id="result-section-title">
+              识别结果
+            </h2>
             <p class="result-meta" id="result-meta">字数：0</p>
           </div>
           <div class="result-area" id="result-area">
             <textarea
               class="result-text"
-              id="resultText"
-              placeholder="点击“开始识别”或上传图片后，文字结果将在这里显示..."
+              id="result-text"
+              placeholder="点击“开始识别”或上传/粘贴图片后，文字结果将在这里显示..."
               readonly
             ></textarea>
-            <div class="result-actions" id="resultActions">
-              <button type="button" class="btn result-btn result-btn--copy" id="copyBtn">复制文本</button>
-              <button type="button" class="btn result-btn result-btn--download" id="saveBtn">下载为 TXT</button>
-              <button type="button" class="btn result-btn result-btn--clear" id="btn-clear-result">清空</button>
+            <div class="result-actions" id="result-actions">
+              <button type="button" class="btn result-btn result-btn--copy" id="btn-copy">
+                复制文本
+              </button>
+              <button type="button" class="btn result-btn result-btn--download" id="btn-save-txt">
+                下载为 TXT
+              </button>
+              <button type="button" class="btn result-btn result-btn--clear" id="btn-clear-result">
+                清空
+              </button>
             </div>
           </div>
         </section>
@@ -137,7 +136,6 @@
     </div>
   </div>
 
-  <!-- 预览项模板 -->
   <template id="preview-item-template">
     <figure class="preview-item">
       <img src="" alt="预览图" class="preview-item__img">
@@ -145,7 +143,6 @@
     </figure>
   </template>
 
-  <!-- 历史记录项模板 -->
   <template id="history-item-template">
     <li class="history-item">
       <button type="button" class="history-item__btn">
@@ -154,7 +151,6 @@
       </button>
     </li>
   </template>
-
   <script src="script.js"></script>
 </body>
 </html>
