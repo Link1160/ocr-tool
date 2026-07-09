@@ -2,7 +2,7 @@ import os
 import threading
 import time
 import json
-from flask import Flask, request, jsonify, send_file, send_from_directory
+from flask import Flask, request, jsonify, send_file, send_from_directory, make_response
 from flask_cors import CORS
 import task_queue
 import image_utils
@@ -18,7 +18,6 @@ os.makedirs(RESULT_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
-# 静态资源路由（上传图、标注图、txt文件）
 @app.route("/static/<folder>/<filename>")
 def static_file(folder, filename):
     dir_map = {
@@ -30,7 +29,7 @@ def static_file(folder, filename):
         return jsonify({"code": 404, "data": None, "error": "资源不存在"}), 404
     return send_from_directory(dir_map[folder], filename)
 
-# 前端页面托管路由
+# 前端路由（backend与frontend同级）
 @app.route('/', methods=['GET'])
 def home():
     return send_from_directory("../frontend", "index.html")
@@ -39,7 +38,11 @@ def home():
 def load_frontend_file(filename):
     return send_from_directory("../frontend", filename)
 
-# 后台OCR识别线程
+@app.route('/assets/<path:filename>')
+def load_asset(filename):
+    return send_from_directory("../frontend/assets", filename)
+
+# OCR后台线程
 def worker():
     print("正在加载PaddleOCR模型，请稍候...")
     print("OCR模型加载完成，后台工作线程已启动！")
@@ -90,12 +93,10 @@ def worker():
 thread = threading.Thread(target=worker, daemon=True)
 thread.start()
 
-# 健康检测接口
 @app.route('/ping', methods=['GET'])
 def ping():
     return jsonify({"code": 200, "data": {"status": "ok", "message": "服务在线"}})
 
-# 图片上传接口
 @app.route('/upload', methods=['POST'])
 def upload_image():
     if 'image' not in request.files:
@@ -111,13 +112,10 @@ def upload_image():
     task_id = task_queue.add_task(file_path)
     return jsonify({
         "code": 200,
-        "data": {
-            "task_id": task_id
-        },
+        "data": {"task_id": task_id},
         "message": "图片上传成功，已加入识别队列"
     })
 
-# 查询任务识别状态
 @app.route('/status/<task_id>', methods=['GET'])
 def get_status(task_id):
     info = task_queue.get_task_info(task_id)
@@ -135,7 +133,6 @@ def get_status(task_id):
         resp_data["error"] = info.get("error", "未知识别失败")
     return jsonify({"code": 200, "data": resp_data})
 
-# 图片裁剪识别接口
 @app.route('/crop', methods=['POST'])
 def crop_and_recognize():
     data = request.get_json()
@@ -144,27 +141,23 @@ def crop_and_recognize():
         return jsonify({"code": 400, "data": None, "error": "缺少 original_path,x1,y1,x2,y2"})
     timestamp = int(time.time())
     crop_save_path = os.path.join(UPLOAD_FOLDER, f"crop_{timestamp}.jpg")
-    image_utils.crop_image(
-        data["original_path"],
-        crop_save_path,
-        data["x1"], data["y1"], data["x2"], data["y2"]
-    )
+    image_utils.crop_image(data["original_path"], crop_save_path, data["x1"], data["y1"], data["x2"], data["y2"])
     task_id = task_queue.add_task(crop_save_path)
     return jsonify({
         "code": 200,
-        "data": {
-            "task_id": task_id,
-            "cropped_path": crop_save_path
-        }
+        "data": {"task_id": task_id, "cropped_path": crop_save_path}
     })
 
-# 获取全部历史记录
+# 获取历史，全局禁用缓存
 @app.route('/history', methods=["GET"])
 def get_history():
     records = get_all_records()
-    return jsonify({"code": 200, "data": records})
+    resp = make_response(jsonify({"code": 200, "data": records}))
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
-# 关键词搜索历史
 @app.route('/search', methods=["POST"])
 def search_history():
     req = request.get_json()
@@ -172,7 +165,6 @@ def search_history():
     match_list = search_records(keyword)
     return jsonify({"code": 200, "data": match_list})
 
-# 导出识别文本TXT
 @app.route('/export/<task_id>', methods=['GET'])
 def export_result(task_id):
     info = task_queue.get_task_info(task_id)
@@ -188,19 +180,19 @@ def export_result(task_id):
         f.write(text)
     return send_file(txt_path, as_attachment=True, download_name=f"{task_id}_ocr结果.txt")
 
-# 彻底清空所有历史（内存+本地json文件）
+# 【核心修复】彻底清空：删除文件 + 完全重置内存BST树，杜绝新识别回弹旧历史
+# 彻底清空所有历史（修复回弹：调用封装好的完整清空函数）
 @app.route('/clear_history', methods=['POST'])
 def clear_history():
-    global bst
-    from history_manager import BSTHistory, RECORD_JSON
-    bst = BSTHistory()
-    if os.path.exists(RECORD_JSON):
-        os.remove(RECORD_JSON)
-    with open(RECORD_JSON, "w", encoding="utf-8") as f:
-        json.dump([], f, ensure_ascii=False, indent=2)
-    return jsonify({"code": 200, "data": None, "message": "所有图片历史已永久删除"})
+    from history_manager import full_clear_history
+    # 一次性清空内存树+本地文件+重新加载空数据
+    full_clear_history()
+    resp = make_response(jsonify({"code": 200, "data": None, "message": "所有图片历史已永久删除"}))
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
-# 获取队列进度
 @app.route('/progress', methods=['GET'])
 def get_progress():
     progress_data = task_queue.get_progress()
