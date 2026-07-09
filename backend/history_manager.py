@@ -1,105 +1,119 @@
-import json
-import time
 import os
+import time
+import json
 
-JSON_PATH = "history_data.json"
-
-class Node:
-    def __init__(self, timestamp, img_path, text, boxes=None):
-        self.timestamp = timestamp
-        self.img_path = img_path
-        self.text = text
-        self.boxes = boxes if boxes is not None else []
+class BSTNode:
+    def __init__(self, stamp, image_file_path, ocr_text, box_data):
+        self.stamp = stamp
+        self.image_file_path = image_file_path
+        self.ocr_text = ocr_text
+        self.box_data = box_data
         self.left = None
         self.right = None
 
 class BSTHistory:
     def __init__(self):
         self.root = None
-        self.load_json()
+        self.all_data = []
 
-    def insert(self, timestamp, img_path, text, boxes):
-        new_node = Node(timestamp, img_path, text, boxes)
+    def insert(self, stamp, image_file_path, ocr_text, box_data):
+        new_node = BSTNode(stamp, image_file_path, ocr_text, box_data)
+        self.all_data.append({
+            "timestamp": stamp,
+            "image_file_path": image_file_path,
+            "ocr_text": ocr_text,
+            "box_data": box_data
+        })
         if self.root is None:
             self.root = new_node
-        else:
-            self._insert(self.root, new_node)
-        self.save_json()
-
-    def _insert(self, root, new_node):
-        if new_node.timestamp < root.timestamp:
-            if root.left is None:
-                root.left = new_node
+            return
+        cur = self.root
+        while True:
+            if new_node.stamp < cur.stamp:
+                if cur.left is None:
+                    cur.left = new_node
+                    break
+                cur = cur.left
             else:
-                self._insert(root.left, new_node)
-        else:
-            if root.right is None:
-                root.right = new_node
-            else:
-                self._insert(root.right, new_node)
+                if cur.right is None:
+                    cur.right = new_node
+                    break
+                cur = cur.right
 
     def get_all_history(self):
-        res = []
-        self._inorder(self.root, res)
-        return res
-
-    def _inorder(self, node, res_list):
-        if node:
-            self._inorder(node.left, res_list)
-            res_list.append({
-                "time_stamp": node.timestamp,
-                "img_path": node.img_path,
-                "ocr_text": node.text,
-                "text_boxes": node.boxes
-            })
-            self._inorder(node.right, res_list)
+        return self.all_data
 
     def search_by_keyword(self, keyword):
-        result = []
-        self._search(self.root, keyword, result)
-        return result
+        res = []
+        kw = keyword.lower()
+        for item in self.all_data:
+            if kw in item["ocr_text"].lower():
+                res.append(item)
+        return res
 
-    def _search(self, node, key, res):
-        if node:
-            if key in node.text:
-                res.append({
-                    "time_stamp": node.timestamp,
-                    "img_path": node.img_path,
-                    "ocr_text": node.text,
-                    "text_boxes": node.boxes
-                })
-            self._search(node.left, key, res)
-            self._search(node.right, key, res)
+# 历史存储目录配置
+HISTORY_ROOT = "history_storage"
+BOX_SUB_DIR = os.path.join(HISTORY_ROOT, "boxed_images")
+TXT_SUB_DIR = os.path.join(HISTORY_ROOT, "txt_output")
+RECORD_JSON = os.path.join(HISTORY_ROOT, "history_records.json")
 
-    def save_json(self):
-        data_list = self.get_all_history()
-        with open(JSON_PATH, "w", encoding="utf-8") as f:
-            json.dump(data_list, f, ensure_ascii=False, indent=2)
+for path in [HISTORY_ROOT, BOX_SUB_DIR, TXT_SUB_DIR]:
+    os.makedirs(path, exist_ok=True)
 
-    def load_json(self):
-        if not os.path.exists(JSON_PATH):
-            return
-        with open(JSON_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        self.root = None
-        for item in data:
-            boxes = item.get("text_boxes", [])
-            node = Node(item["time_stamp"], item["img_path"], item["ocr_text"], boxes)
-            self._rebuild_insert(node)
+bst = BSTHistory()
 
-    def _rebuild_insert(self, new_node):
-        if self.root is None:
-            self.root = new_node
-            return
-        root = self.root
-        while True:
-            if new_node.timestamp < root.timestamp:
-                if root.left is None:
-                    root.left = new_node
-                    break
-                root = root.left
-            else:
-                if root.right is None:
-                    root.left = new_node
-                    break
-                root = root.right
+# 持久化读写
+def save_records_to_file():
+    data = bst.get_all_history()
+    with open(RECORD_JSON, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def load_records_from_file():
+    if not os.path.exists(RECORD_JSON):
+        return
+    with open(RECORD_JSON, "r", encoding="utf-8") as f:
+        records = json.load(f)
+    for item in records:
+        bst.insert(
+            stamp=item["timestamp"],
+            image_file_path=item["image_file_path"],
+            ocr_text=item["ocr_text"],
+            box_data=item["box_data"]
+        )
+
+load_records_from_file()
+
+# 对外业务函数
+def add_ocr_record(
+    timestamp: float,
+    img_url: str,
+    box_img_url: str,
+    txt_url: str,
+    full_text: str,
+    box_data: list
+) -> dict:
+    bst.insert(
+        stamp=timestamp,
+        image_file_path=img_url,
+        ocr_text=full_text,
+        box_data=box_data
+    )
+    all_records = bst.get_all_history()
+    new_record = all_records[-1]
+    new_record["box_img_path"] = box_img_url
+    new_record["txt_file_path"] = txt_url
+    save_records_to_file()
+    return new_record
+
+def get_all_records() -> list:
+    return bst.get_all_history()
+
+def search_records(keyword: str) -> list:
+    raw_list = bst.get_all_history()
+    res = []
+    kw = keyword.lower()
+    for item in raw_list:
+        text = item["ocr_text"].lower()
+        if kw in text:
+            res.append(item)
+    return res
