@@ -40,8 +40,9 @@ class BSTHistory:
                     break
                 cur = cur.right
 
+    # 倒序，最新图片在列表顶部
     def get_all_history(self):
-        return self.all_data
+        return list(reversed(self.all_data))
 
     def search_by_keyword(self, keyword):
         res = []
@@ -49,12 +50,11 @@ class BSTHistory:
         for item in self.all_data:
             if kw in item["ocr_text"].lower():
                 res.append(item)
-        return res
+        return list(reversed(res))
 
-# 历史存储目录配置
 HISTORY_ROOT = "history_storage"
-BOX_SUB_DIR = os.path.join(HISTORY_ROOT, "boxed_images")
-TXT_SUB_DIR = os.path.join(HISTORY_ROOT, "txt_output")
+BOX_SUB_DIR = os.path.join(HISTORY_ROOT, "boxed")
+TXT_SUB_DIR = os.path.join(HISTORY_ROOT, "txt")
 RECORD_JSON = os.path.join(HISTORY_ROOT, "history_records.json")
 
 for path in [HISTORY_ROOT, BOX_SUB_DIR, TXT_SUB_DIR]:
@@ -62,7 +62,6 @@ for path in [HISTORY_ROOT, BOX_SUB_DIR, TXT_SUB_DIR]:
 
 bst = BSTHistory()
 
-# 持久化读写
 def save_records_to_file():
     data = bst.get_all_history()
     with open(RECORD_JSON, "w", encoding="utf-8") as f:
@@ -83,37 +82,17 @@ def load_records_from_file():
 
 load_records_from_file()
 
-# 对外业务函数
-def add_ocr_record(
-    timestamp: float,
-    img_url: str,
-    box_img_url: str,
-    txt_url: str,
-    full_text: str,
-    box_data: list
-) -> dict:
-    bst.insert(
-        stamp=timestamp,
-        image_file_path=img_url,
-        ocr_text=full_text,
-        box_data=box_data
-    )
+# 仅保存原图地址，不持久存储box_img_url，节省存储空间
+def add_ocr_record(timestamp, img_url, box_img_url, txt_url, full_text, box_data):
+    bst.insert(timestamp, img_url, full_text, box_data)
     all_records = bst.get_all_history()
     new_record = all_records[-1]
-    new_record["box_img_path"] = box_img_url
-    new_record["txt_file_path"] = txt_url
+    new_record["image_file_path"] = img_url
     save_records_to_file()
     return new_record
 
-def get_all_records() -> list:
+def get_all_records():
     return bst.get_all_history()
 
-def search_records(keyword: str) -> list:
-    raw_list = bst.get_all_history()
-    res = []
-    kw = keyword.lower()
-    for item in raw_list:
-        text = item["ocr_text"].lower()
-        if kw in text:
-            res.append(item)
-    return res
+def search_records(keyword):
+    return bst.search_by_keyword(keyword)

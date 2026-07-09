@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import os
+import time
 from PIL import Image, ImageDraw
 from paddleocr import PaddleOCR
 
@@ -66,3 +67,25 @@ def run_ocr(img_local_path: str) -> OCRResult:
     res_obj.full_text = full_txt
 
     return res_obj
+
+def crop_image(origin_path, save_path, x1, y1, x2, y2):
+    img = Image.open(origin_path)
+    cropped = img.crop((int(x1), int(y1), int(x2), int(y2)))
+    cropped.save(save_path)
+    return save_path
+
+# 本地测试入口
+if __name__ == "__main__":
+    from history_manager import BSTHistory
+    history = BSTHistory()
+    test_img = "test.jpg"
+    if os.path.exists(test_img):
+        stamp = time.time()
+        ocr_res = run_ocr(test_img)
+        box_data = ocr_res.box_list
+        ocr_text = ocr_res.full_text
+        history.insert(stamp, test_img, ocr_text, box_data)
+        print("处理完成，已生成标注图片与TXT，并写入历史记录")
+    else:
+        print("未找到test.jpg，请将测试图片放到当前目录")
+    input("按回车退出...")
