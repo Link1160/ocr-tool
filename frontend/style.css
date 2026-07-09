@@ -28,7 +28,7 @@ html {
   min-height: 100%;
   background:
     linear-gradient(rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.45)),
-    url("background.jpg") center / cover fixed no-repeat;
+    url("assets/background.jpg") center / cover fixed no-repeat;
 }
 
 body {

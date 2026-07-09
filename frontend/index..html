@@ -8,7 +8,6 @@
 </head>
 <body>
   <div class="app" id="app">
-    <!-- 1. 顶部标题区 -->
     <header class="page-header" id="page-header">
       <h1 class="page-header__title title-sparkle" id="page-title">
         <span class="sparkle-field" aria-hidden="true">
@@ -26,7 +25,6 @@
 
     <div class="layout" id="main-layout">
       <main class="content" id="main-content">
-        <!-- 2. 拖拽上传区域 -->
         <section class="section" id="upload-section">
           <h2 class="text-16 section-title" id="upload-section-title">上传图片</h2>
           <label class="upload-zone" id="upload-zone" for="file-input">
@@ -63,7 +61,6 @@
           </div>
         </section>
 
-        <!-- 3. 预览区 + 4. 结果区 -->
         <div class="workspace" id="workspace">
           <section class="section" id="preview-section">
             <div class="section-header">
@@ -104,7 +101,6 @@
 
       </main>
 
-      <!-- 5. 右侧识别结果边栏 -->
       <aside class="result-sidebar">
         <section class="section" id="result-section">
           <div class="section-header result-header">
@@ -137,7 +133,6 @@
     </div>
   </div>
 
-  <!-- 预览项模板（供 JS 克隆） -->
   <template id="preview-item-template">
     <figure class="preview-item">
       <img src="" alt="预览图" class="preview-item__img">
@@ -145,7 +140,6 @@
     </figure>
   </template>
 
-  <!-- 历史记录项模板（供 JS 克隆） -->
   <template id="history-item-template">
     <li class="history-item">
       <button type="button" class="history-item__btn">
