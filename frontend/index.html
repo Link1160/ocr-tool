@@ -8,23 +8,25 @@
 </head>
 <body>
   <div class="app" id="app">
+    <!-- 1. 顶部标题区 -->
     <header class="page-header" id="page-header">
       <h1 class="page-header__title title-sparkle" id="page-title">
         <span class="sparkle-field" aria-hidden="true">
-          <span class="sparkle sparkle--1">✦</span>
-          <span class="sparkle sparkle--2">✧</span>
-          <span class="sparkle sparkle--3">✦</span>
-          <span class="sparkle sparkle--4">✧</span>
-          <span class="sparkle sparkle--5">✦</span>
-          <span class="sparkle sparkle--6">✧</span>
+          <span class="sparkle sparkle--1">?</span>
+          <span class="sparkle sparkle--2">?</span>
+          <span class="sparkle sparkle--3">?</span>
+          <span class="sparkle sparkle--4">?</span>
+          <span class="sparkle sparkle--5">?</span>
+          <span class="sparkle sparkle--6">?</span>
         </span>
         <span class="title-text">OCR – 在线从图片中提取文字</span>
       </h1>
-      <p class="page-header__subtitle" id="page-subtitle">上传 JPG、PNG、PDF等格式或直接粘贴图片。精确识别，无需注册。</p>
+      <p class="page-header__subtitle" id="page-subtitle">上传 JPG、PNG、PDF 或直接粘贴图片。精确识别，无需注册。</p>
     </header>
 
     <div class="layout" id="main-layout">
       <main class="content" id="main-content">
+        <!-- 2. 拖拽上传区域 -->
         <section class="section" id="upload-section">
           <h2 class="text-16 section-title" id="upload-section-title">上传图片</h2>
           <label class="upload-zone" id="upload-zone" for="file-input">
@@ -61,6 +63,7 @@
           </div>
         </section>
 
+        <!-- 3. 预览区 + 4. 结果区 -->
         <div class="workspace" id="workspace">
           <section class="section" id="preview-section">
             <div class="section-header">
@@ -101,6 +104,7 @@
 
       </main>
 
+      <!-- 5. 右侧识别结果边栏 -->
       <aside class="result-sidebar">
         <section class="section" id="result-section">
           <div class="section-header result-header">
@@ -133,6 +137,7 @@
     </div>
   </div>
 
+  <!-- 预览项模板（供 JS 克隆） -->
   <template id="preview-item-template">
     <figure class="preview-item">
       <img src="" alt="预览图" class="preview-item__img">
@@ -140,6 +145,7 @@
     </figure>
   </template>
 
+  <!-- 历史记录项模板（供 JS 克隆） -->
   <template id="history-item-template">
     <li class="history-item">
       <button type="button" class="history-item__btn">
@@ -148,5 +154,7 @@
       </button>
     </li>
   </template>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="frontend/script.js"></script>
 </body>
 </html>
