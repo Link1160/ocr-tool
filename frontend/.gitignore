@@ -1,8 +1,8 @@
 # Python
 __pycache__/
 *.pyc
-venv/
-.venv/
+../backend/venv/
+../.venv/
 env/
 
 # 后端临时文件（必须忽略，不然队友互相覆盖图片）

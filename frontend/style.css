@@ -91,7 +91,7 @@ body {
   color: var(--color-text);
   background:
     linear-gradient(rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.45)),
-    url("./assets/background.jpg") center / cover fixed no-repeat;
+    url("background.jpg") center / cover fixed no-repeat;
   min-height: 100vh;
   min-width: var(--layout-min-width);
   overflow-x: auto;

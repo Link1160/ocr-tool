@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', function() {
     loadHistory();
 });
 
-// 仅【清空预览】按钮专用：会清空图+文字（单独按钮功能，和清空历史无关）
+// 清空预览图片（不碰右侧识别文字）
 function clearAllPreview() {
     const wrap = document.getElementById("box-preview-wrap");
     const img = document.getElementById("box-preview-img");
@@ -25,10 +25,6 @@ function clearAllPreview() {
     img.src = "";
     emptyTip.style.display = "block";
     currentBoxImgUrl = "";
-    const resultDiv = document.getElementById('resultText');
-    const actionsDiv = document.getElementById('resultActions');
-    if(resultDiv) resultDiv.value = '';
-    if(actionsDiv) actionsDiv.style.display = 'none';
     currentTaskId = null;
 }
 
@@ -37,7 +33,7 @@ function initClearPreviewBtn() {
     clearBtn.addEventListener("click", clearAllPreview);
 }
 
-// 清空结果按钮（单独清右侧文字，和清空历史无关）
+// 仅清空右侧文本框，不影响预览图、历史列表
 function initClearResultBtn() {
     const clearResBtn = document.getElementById("btn-clear-result");
     clearResBtn.addEventListener("click", () => {
@@ -49,12 +45,11 @@ function initClearResultBtn() {
     });
 }
 
-// ====================== 核心修复：清空历史 完全不碰右侧文字 ======================
-// ====================== 修复后：清空历史完全不触碰右侧文字、识别结果 ======================
+// 一键清空后端全部历史（仅清空左侧历史列表，完全保留右侧识别文字）
 function initClearHistoryBtn() {
     const clearHisBtn = document.getElementById("btn-clear-history");
     clearHisBtn.addEventListener("click", async () => {
-        if (!confirm("确定清空所有图片识别历史？该操作不可恢复")) return;
+        if (!confirm("确定永久清空全部识别历史？此操作不可撤销")) return;
         try {
             const res = await fetch(`${API_BASE}/clear_history`, {
                 method: "POST",
@@ -62,12 +57,9 @@ function initClearHistoryBtn() {
             });
             const resp = await res.json();
             if (resp.code === 200) {
-                showMessage("历史已全部永久清空", "success");
-                // 仅清空历史列表DOM，【不操作resultText、复制按钮】
+                showMessage("历史已全部清空", "success");
                 const historyList = document.getElementById("historyList");
                 historyList.innerHTML = '<li class="history-list__empty">暂无历史记录</li>';
-
-                // 仅清空左侧预览图，完全隔离右侧文字区域
                 const wrap = document.getElementById("box-preview-wrap");
                 const img = document.getElementById("box-preview-img");
                 const emptyTip = document.getElementById("preview-empty");
@@ -75,27 +67,14 @@ function initClearHistoryBtn() {
                 img.src = "";
                 emptyTip.style.display = "block";
                 currentBoxImgUrl = "";
-
-                // 仅刷新历史列表，禁止任何识别结果/文字重渲染
-                setTimeout(async () => {
-                    const cacheUrl = `${API_BASE}/history?t=${Date.now()}`;
-                    const newRes = await fetch(cacheUrl, { cache: "no-store", headers: { "Cache-Control": "no-cache" } });
-                    const newResp = await newRes.json();
-                    const listData = newResp.data ?? [];
-                    // 只渲染历史列表，不调用图片/文字渲染逻辑
-                    const historyList = document.getElementById("historyList");
-                    renderHistoryList(listData, historyList);
-                }, 600);
             } else {
-                showMessage(resp.error || "清空失败", "error");
+                showMessage(`清空失败：${resp.message || "服务器异常"}`, "error");
             }
         } catch (err) {
-            showMessage(`请求失败：${err.message}`, "error");
-            console.error("清空历史接口报错：", err);
+            showMessage(`清空失败：${err.message}`, "error");
         }
     });
 }
-// ==============================================================================
 
 function initUploadArea() {
     const dropZone = document.getElementById('dropZone');
@@ -126,15 +105,25 @@ function initFileInput() {
     });
 }
 
+// ========== 【修复后的上传校验函数】双重校验：MIME + 后缀名，解决类型误拦截 =========
 function handleFileUpload(file) {
-    const allowImg = ['image/jpeg','image/jpg','image/png','image/gif','image/webp','image/bmp'];
-    if (!allowImg.includes(file.type)) {
-        showMessage('当前不支持该文件类型，请尝试其他图片', 'error');
+    // 正确标准图片MIME白名单，删除错误image/jpg
+    const allowMime = ['image/jpeg','image/png','image/gif','image/webp','image/bmp'];
+    // 后缀白名单，兼容大小写
+    const allowExt = ['jpg','jpeg','png','gif','webp','bmp'];
+    const fileName = file.name.toLowerCase();
+    const fileExt = fileName.split('.').pop();
+    // 双重判断：MIME正常匹配 或 后缀匹配（兜底空type场景）
+    const isImage = allowMime.includes(file.type) || allowExt.includes(fileExt);
+
+    if (!isImage) {
+        showMessage('当前不支持该文件类型，请上传jpg/png/gif/webp/bmp图片', 'error');
         return;
     }
+
     const formData = new FormData();
     formData.append('image', file);
-    showMessage('Uploading...', 'info');
+    showMessage('正在上传图片...', 'info');
     setLoadingState(true);
     fetch(`${API_BASE}/upload`, {
         method: 'POST',
@@ -142,11 +131,15 @@ function handleFileUpload(file) {
     })
     .then(res => res.json())
     .then(resp => {
-        if (resp.code !== 200) throw new Error(resp.error || '上传失败');
-        if (resp.data.task_id) {
-            currentTaskId = resp.data.task_id;
-            startPolling(currentTaskId);
+        // 多层判空，彻底解决 task_id undefined
+        if (!resp || resp.code !== 200) {
+            throw new Error(resp?.msg || "服务器返回异常");
         }
+        if (!resp.task_id) {
+            throw new Error("后端未返回任务ID");
+        }
+        currentTaskId = resp.task_id;
+        startPolling(currentTaskId);
     })
     .catch(err => {
         showMessage(`上传失败: ${err.message}`, 'error');
@@ -154,13 +147,14 @@ function handleFileUpload(file) {
     });
 }
 
+// 点击历史记录原图重新识别
 function reRecognizeByHistoryImgUrl(imgUrl) {
     showMessage("正在重新加载该图片并识别...", "info");
     setLoadingState(true);
     fetch(imgUrl)
     .then(res => res.blob())
     .then(blob => {
-        const file = new File([blob], "history_temp.jpg", { type: blob.type });
+        const file = new File([blob], "history_temp.jpg", { type: "image/jpeg" });
         const formData = new FormData();
         formData.append("image", file);
         fetch(`${API_BASE}/upload`, {
@@ -169,8 +163,10 @@ function reRecognizeByHistoryImgUrl(imgUrl) {
         })
         .then(res => res.json())
         .then(resp => {
-            if (resp.code !== 200) throw new Error(resp.error);
-            currentTaskId = resp.data.task_id;
+            if (!resp || resp.code !== 200 || !resp.task_id) {
+                throw new Error("上传未获取任务ID");
+            }
+            currentTaskId = resp.task_id;
             startPolling(currentTaskId);
         })
         .catch(err => {
@@ -184,6 +180,7 @@ function reRecognizeByHistoryImgUrl(imgUrl) {
     });
 }
 
+// 轮询任务识别进度
 function startPolling(taskId) {
     if (pollingInterval) clearInterval(pollingInterval);
     let attempts = 0;
@@ -193,20 +190,19 @@ function startPolling(taskId) {
         if (attempts > maxAttempts) {
             clearInterval(pollingInterval);
             pollingInterval = null;
-            showMessage('Processing timeout, please try again.', 'error');
+            showMessage('识别超时，请重新上传图片', 'error');
             setLoadingState(false);
             return;
         }
         fetch(`${API_BASE}/status/${taskId}`)
         .then(res => res.json())
         .then(resp => {
-            if (resp.code !== 200) throw new Error(resp.error);
+            if (!resp || resp.code !== 200) throw new Error(resp?.msg || "查询任务失败");
             const data = resp.data;
             if (data.status === "done") {
                 clearInterval(pollingInterval);
                 pollingInterval = null;
                 setLoadingState(false);
-                // 渲染文字，完全独立，不受清空历史干扰
                 displayResult(data.result || '', taskId);
                 if (data.box_img_url) {
                     currentBoxImgUrl = data.box_img_url;
@@ -216,31 +212,31 @@ function startPolling(taskId) {
                     imgDom.src = currentBoxImgUrl;
                     document.getElementById("preview-empty").style.display = "none";
                 }
-                showMessage('Processing complete!', 'success');
+                showMessage('识别完成！', 'success');
                 loadHistory();
             } else if (data.status === 'pending' || data.status === 'doing') {
-                showMessage('Processing...', 'info');
+                showMessage('正在识别图片...', 'info');
             } else {
                 clearInterval(pollingInterval);
                 pollingInterval = null;
                 setLoadingState(false);
-                showMessage(`识别失败: ${data.error}`, 'error');
+                showMessage(`识别失败: ${data.error || "未知错误"}`, 'error');
             }
         })
         .catch(err => {
             clearInterval(pollingInterval);
             pollingInterval = null;
             setLoadingState(false);
-            showMessage(`查询状态失败: ${err.message}`, 'error');
+            showMessage(`查询任务状态失败: ${err.message}`, 'error');
         });
     }, 1000);
 }
 
-// 独立渲染文字函数，和历史列表完全解耦
+// 渲染识别结果到右侧文本框
 function displayResult(text, taskId) {
     const resultDiv = document.getElementById('resultText');
     const actionsDiv = document.getElementById('resultActions');
-    if (resultDiv) resultDiv.textContent = text || '';
+    if (resultDiv) resultDiv.value = text || '';
     if (actionsDiv) actionsDiv.style.display = 'block';
     const copyBtn = document.getElementById('copyBtn');
     const saveBtn = document.getElementById('saveBtn');
@@ -248,6 +244,7 @@ function displayResult(text, taskId) {
     if (saveBtn) saveBtn.dataset.taskId = taskId || '';
 }
 
+// 复制文本按钮
 function initCopyButton() {
     const copyBtn = document.getElementById('copyBtn');
     if (!copyBtn) return;
@@ -265,6 +262,7 @@ function initCopyButton() {
     });
 }
 
+// 兼容低版本浏览器复制
 function fallbackCopy(text) {
     const textarea = document.createElement('textarea');
     textarea.value = text;
@@ -278,6 +276,7 @@ function fallbackCopy(text) {
     document.body.removeChild(textarea);
 }
 
+// 导出TXT文件按钮
 function initSaveButton() {
     const saveBtn = document.getElementById('saveBtn');
     if (!saveBtn) return;
@@ -300,7 +299,7 @@ function initSaveButton() {
     });
 }
 
-// 加载历史，强制无缓存
+// 加载全部历史
 function loadHistory() {
     const historyList = document.getElementById("historyList");
     if (!historyList) return;
@@ -319,6 +318,7 @@ function loadHistory() {
     });
 }
 
+// 渲染历史列表DOM
 function renderHistoryList(items, container) {
     container.innerHTML = '';
     if (!items || !Array.isArray(items) || items.length === 0) {
@@ -328,22 +328,18 @@ function renderHistoryList(items, container) {
     items.forEach(item => {
         const li = document.createElement('li');
         li.className = 'history-item';
-
         const timeSpan = document.createElement('time');
         timeSpan.className = 'history-item__time';
         timeSpan.textContent = new Date(item.timestamp * 1000).toLocaleString();
-
         const textSpan = document.createElement('span');
         textSpan.className = 'history-item__title';
         const rawText = item.ocr_text || '';
         textSpan.textContent = rawText.length > 60 ? rawText.slice(0, 60) + '...' : rawText;
-
         const btn = document.createElement('button');
         btn.className = 'history-item__btn';
         btn.appendChild(timeSpan);
         btn.appendChild(document.createElement('br'));
         btn.appendChild(textSpan);
-
         btn.addEventListener('click', () => {
             if (!item.image_file_path) {
                 showMessage("该历史无原图地址，无法重新识别", "warning");
@@ -352,12 +348,12 @@ function renderHistoryList(items, container) {
             clearAllPreview();
             reRecognizeByHistoryImgUrl(item.image_file_path);
         });
-
         li.appendChild(btn);
         container.appendChild(li);
     });
 }
 
+// 打开/关闭历史侧边栏
 function initHistoryButton() {
     const historyBtn = document.getElementById('historyBtn');
     const sidebar = document.getElementById('historySidebar');
@@ -370,6 +366,7 @@ function initHistoryButton() {
     });
 }
 
+// 历史关键词检索
 function initSearchButton() {
     const searchBtn = document.getElementById('searchBtn');
     const searchInput = document.getElementById('historyInput');
@@ -403,6 +400,7 @@ async function performSearch(keyword) {
     }
 }
 
+// 上传加载状态切换
 function setLoadingState(loading) {
     const uploadBtn = document.getElementById('btn-start-ocr');
     const dropZone = document.getElementById('dropZone');
@@ -410,6 +408,7 @@ function setLoadingState(loading) {
     if (dropZone) dropZone.style.opacity = loading ? "0.5" : "1";
 }
 
+// 全局消息弹窗
 function showMessage(msg, type) {
     const container = document.getElementById("messageContainer");
     if (!container) return console.log(`[${type}] ${msg}`);

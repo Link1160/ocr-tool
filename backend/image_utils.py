@@ -1,17 +1,25 @@
+# ============== 顶部禁用OneDNN + PIR执行器 ==============
+import os
+os.environ["FLAGS_use_mkldnn"] = "0"
+os.environ["FLAGS_use_mkldnn_int8"] = "0"
+os.environ["FLAGS_use_onednn"] = "0"
+os.environ["FLAGS_enable_pir_in_executor"] = "0"
+os.environ["FLAGS_use_pir_inference"] = "0"
+os.environ["FLAGS_new_executor"] = "0"
+
 import cv2
 import numpy as np
-import os
 import time
 from PIL import Image, ImageDraw
 from paddleocr import PaddleOCR
+# 【关键修复】导入历史管理模块的路径常量，全局统一，不再重复定义
+from history_manager import HISTORY_ROOT, BOX_SUB_DIR, TXT_SUB_DIR
 
-HISTORY_ROOT = "history_storage"
-BOX_SUB_DIR = os.path.join(HISTORY_ROOT, "boxed_images")
-TXT_SUB_DIR = os.path.join(HISTORY_ROOT, "txt_output")
+# 自动创建目录（复用全局常量）
 for d in [BOX_SUB_DIR, TXT_SUB_DIR]:
     os.makedirs(d, exist_ok=True)
 
-ocr_engine = PaddleOCR(use_angle_cls=True, lang="ch", show_log=False)
+ocr_engine = PaddleOCR(use_angle_cls=True, lang="ch")
 
 class OCRResult:
     def __init__(self):
@@ -30,7 +38,7 @@ def run_ocr(img_local_path: str) -> OCRResult:
         res_obj.box_img_path = box_save
         return res_obj
 
-    ocr_out = ocr_engine.ocr(img_local_path, cls=True)
+    ocr_out = ocr_engine.ocr(img_local_path)
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     pil_img = Image.fromarray(img_rgb)
     draw = ImageDraw.Draw(pil_img)
@@ -74,7 +82,6 @@ def crop_image(origin_path, save_path, x1, y1, x2, y2):
     cropped.save(save_path)
     return save_path
 
-# 本地测试入口
 if __name__ == "__main__":
     from history_manager import BSTHistory
     history = BSTHistory()

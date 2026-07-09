@@ -1,12 +1,16 @@
 import os
+os.environ["FLAGS_use_mkldnn"] = "0"
+os.environ["FLAGS_enable_pir_in_executor"] = "0"
+
 from PIL import Image, ImageEnhance, ImageFilter
+
 _ocr = None
 
 def init_ocr():
     global _ocr
     if _ocr is None:
         from paddleocr import PaddleOCR
-        _ocr = PaddleOCR(use_textline_orientation=True, lang='ch')
+        _ocr = PaddleOCR(use_textline_orientation=True, lang='ch', use_mkldnn=False)
     return _ocr
 
 def preprocess_image(image_path):
@@ -29,7 +33,7 @@ def recognize_text(image_path):
     ocr = init_ocr()
     final_img_path = preprocess_image(image_path)
     try:
-        result = ocr.ocr(final_img_path, cls=True)
+        result = ocr.ocr(final_img_path)
         if not result or not result[0]:
             return ""
         text_list = []

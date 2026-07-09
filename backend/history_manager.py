@@ -1,18 +1,25 @@
 import os
 import time
 import json
+
 class BSTNode:
     def __init__(self, stamp, image_file_path, ocr_text, box_data):
         self.stamp = stamp
         self.image_file_path = image_file_path
         self.ocr_text = ocr_text
+        self.box_data = box_data
         self.left = None
         self.right = None
 
 class BSTHistory:
     def __init__(self):
         self.root = None
-        self.all_data = []  # 存储全部记录数组
+        self.all_data = []
+
+    # 彻底清空内存记录，修复 self.all 笔误
+    def clear_all(self):
+        self.root = None
+        self.all_data.clear()
 
     def insert(self, stamp, image_file_path, ocr_text, box_data):
         new_node = BSTNode(stamp, image_file_path, ocr_text, box_data)
@@ -38,86 +45,70 @@ class BSTHistory:
                     break
                 cur = cur.right
 
-    # 清空整棵树+清空全部数据数组
-    def clear_all(self):
-        self.root = None
-        self.all_data = []
-
-    # 倒序，最新图片在列表顶部
     def get_all_history(self):
         return list(reversed(self.all_data))
 
     def search_by_keyword(self, keyword):
-        res = []
         kw = keyword.lower()
-        for item in self.all_data:
-            if kw in item["ocr_text"].lower():
-                res.append(item)
-        return list(reversed(res))
+        return list(reversed([i for i in self.all_data if kw in i["ocr_text"].lower()]))
 
 # 路径常量
 HISTORY_ROOT = "history_storage"
-BOX_SUB_DIR = os.path.join(HISTORY_ROOT, "txt")
+BOX_SUB_DIR = os.path.join(HISTORY_ROOT, "boxed")
 TXT_SUB_DIR = os.path.join(HISTORY_ROOT, "txt")
 RECORD_JSON = os.path.join(HISTORY_ROOT, "history_records.json")
 
-# 创建文件夹
-for path in [HISTORY_ROOT, BOX_SUB_DIR, TXT_SUB_DIR]:
-    os.makedirs(path, exist_ok=True)
+# 创建文件夹，全部补全 exist_ok=True
+os.makedirs(HISTORY_ROOT, exist_ok=True)
+os.makedirs(BOX_SUB_DIR, exist_ok=True)
+os.makedirs(TXT_SUB_DIR, exist_ok=True)
 
 # 全局实例
 bst = BSTHistory()
 
-# 写入json文件
-def save_records_to_file():
-    data = bst.get_all_history()
-    with open(RECORD_JSON, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-# 从文件加载数据（独立函数，可随时调用）
+# 加载历史文件
 def load_records_from_file():
-    # 加载前先清空现有内存数据
     bst.clear_all()
     if not os.path.exists(RECORD_JSON):
         return
     with open(RECORD_JSON, "r", encoding="utf-8") as f:
         records = json.load(f)
     for item in records:
-        bst.insert(
-            stamp=item["timestamp"],
-            image_file_path=item["image_file_path"],
-            ocr_text=item["ocr_text"],
-            box_data=item["box_data"]
-        )
+        bst.insert(item["timestamp"], item["image_file_path"], item["ocr_text"], item["box_data"])
 
-# 程序启动时加载一次
-load_records_from_file()
+# 保存记录到文件
+def save_records_to_file():
+    data = bst.get_all_history()
+    with open(RECORD_JSON, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.flush()
 
-# 新增一条OCR记录
+# 新增识别记录
 def add_ocr_record(timestamp, img_url, box_img_url, txt_url, full_text, box_data):
+    load_records_from_file()
     bst.insert(timestamp, img_url, full_text, box_data)
-    all_records = bst.get_all_history()
-    new_record = all_records[-1]
     save_records_to_file()
-    return new_record
+    return bst.get_all_history()[-1]
 
 # 获取全部历史
 def get_all_records():
+    load_records_from_file()
     return bst.get_all_history()
 
-# 关键词搜索
+# 关键词检索
 def search_records(keyword):
-    return bst.search_by_keyword()
+    load_records_from_file()
+    return bst.search_by_keyword(keyword)
 
-# 新增：全局清空历史接口（给app.py调用，一次性清空内存+文件）
+# 一键清空全部历史（内存+文件双重清空，不会回弹）
 def full_clear_history():
-    # 1. 清空内存BST与数组
     bst.clear_all()
-    # 2. 删除本地json文件
     if os.path.exists(RECORD_JSON):
         os.remove(RECORD_JSON)
-    # 3. 新建空json文件
     with open(RECORD_JSON, "w", encoding="utf-8") as f:
-        json.dump([], f, ensure_ascii=False, indent=2)
-    # 4. 重新加载空文件，同步内存状态
+        json.dump([], f, ensure_ascii=False)
+        f.flush()
     load_records_from_file()
+
+# 程序启动加载历史
+load_records_from_file()
