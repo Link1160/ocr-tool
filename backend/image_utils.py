@@ -37,17 +37,40 @@ class OCRResult:
         self.txt_path = ""
 
 
+# ========== 中文路径兼容工具函数 ==========
+def cv_read_image(file_path):
+    """兼容中文路径的图片读取，替代cv2.imread"""
+    if not os.path.exists(file_path):
+        return None
+    # 从文件读取字节流，再解码为图片，完全规避路径编码问题
+    img_array = np.fromfile(file_path, dtype=np.uint8)
+    img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+    return img
+
+
+def cv_write_image(save_path, img):
+    """兼容中文路径的图片保存，替代cv2.imwrite"""
+    # 获取文件扩展名，自动适配jpg/png等格式
+    ext = os.path.splitext(save_path)[1]
+    # 编码图片后写入文件，规避路径编码问题
+    cv2.imencode(ext, img)[1].tofile(save_path)
+    return save_path
+
+
 def run_ocr(img_local_path: str) -> OCRResult:
     res_obj = OCRResult()
-    img = cv2.imread(img_local_path)
+    # 使用兼容中文的方式读取图片
+    img = cv_read_image(img_local_path)
+
     if img is None:
         box_name = os.path.basename(img_local_path)
         box_save = os.path.join(BOX_SUB_DIR, box_name)
-        cv2.imwrite(box_save, np.zeros((100, 100, 3), dtype=np.uint8))
+        cv_write_image(box_save, np.zeros((100, 100, 3), dtype=np.uint8))
         res_obj.box_img_path = box_save
         return res_obj
 
-    ocr_out = ocr_engine.ocr(img_local_path)
+    # 直接传入图片数组给PaddleOCR，避免内部二次读取路径触发中文问题
+    ocr_out = ocr_engine.ocr(img)
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     pil_img = Image.fromarray(img_rgb)
     draw = ImageDraw.Draw(pil_img)
@@ -70,11 +93,11 @@ def run_ocr(img_local_path: str) -> OCRResult:
             draw.text((x1, y1 - 16), f"{score:.2f}", fill=(0, 255, 0))
             line_texts.append(txt)
 
-    # 保存标注图
+    # 保存标注图（兼容中文路径）
     file_name = os.path.basename(img_local_path)
     box_img_full = os.path.join(BOX_SUB_DIR, file_name)
     out_bgr = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-    cv2.imwrite(box_img_full, out_bgr)
+    cv_write_image(box_img_full, out_bgr)
     res_obj.box_img_path = box_img_full
 
     # 保存识别文本TXT
@@ -98,6 +121,7 @@ def crop_image(origin_path, save_path, x1, y1, x2, y2):
 
 if __name__ == "__main__":
     from history_manager import BSTHistory
+
     history = BSTHistory()
     test_img = "test.jpg"
     if os.path.exists(test_img):
