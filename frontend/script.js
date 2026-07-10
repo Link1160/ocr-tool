@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', function() {
     loadHistory();
 });
 
-// 清空预览图片（不碰右侧识别文字）
+// 清空预览图片（不触碰右侧识别文字）
 function clearAllPreview() {
     const wrap = document.getElementById("box-preview-wrap");
     const img = document.getElementById("box-preview-img");
@@ -33,7 +33,7 @@ function initClearPreviewBtn() {
     clearBtn.addEventListener("click", clearAllPreview);
 }
 
-// 仅清空右侧文本框，不影响预览图、历史列表
+// 仅清空右侧文本框
 function initClearResultBtn() {
     const clearResBtn = document.getElementById("btn-clear-result");
     clearResBtn.addEventListener("click", () => {
@@ -45,7 +45,7 @@ function initClearResultBtn() {
     });
 }
 
-// 一键清空后端全部历史（仅清空左侧历史列表，完全保留右侧识别文字）
+// 清空历史（仅清空历史列表，不影响右侧识别结果）
 function initClearHistoryBtn() {
     const clearHisBtn = document.getElementById("btn-clear-history");
     clearHisBtn.addEventListener("click", async () => {
@@ -105,15 +105,12 @@ function initFileInput() {
     });
 }
 
-// ========== 【修复后的上传校验函数】双重校验：MIME + 后缀名，解决类型误拦截 =========
+// 【修复：MIME + 后缀名双重校验，解决类型误拦截】
 function handleFileUpload(file) {
-    // 正确标准图片MIME白名单，删除错误image/jpg
     const allowMime = ['image/jpeg','image/png','image/gif','image/webp','image/bmp'];
-    // 后缀白名单，兼容大小写
     const allowExt = ['jpg','jpeg','png','gif','webp','bmp'];
     const fileName = file.name.toLowerCase();
     const fileExt = fileName.split('.').pop();
-    // 双重判断：MIME正常匹配 或 后缀匹配（兜底空type场景）
     const isImage = allowMime.includes(file.type) || allowExt.includes(fileExt);
 
     if (!isImage) {
@@ -131,7 +128,6 @@ function handleFileUpload(file) {
     })
     .then(res => res.json())
     .then(resp => {
-        // 多层判空，彻底解决 task_id undefined
         if (!resp || resp.code !== 200) {
             throw new Error(resp?.msg || "服务器返回异常");
         }
@@ -147,7 +143,7 @@ function handleFileUpload(file) {
     });
 }
 
-// 点击历史记录原图重新识别
+// 历史记录重新识别
 function reRecognizeByHistoryImgUrl(imgUrl) {
     showMessage("正在重新加载该图片并识别...", "info");
     setLoadingState(true);
@@ -180,7 +176,7 @@ function reRecognizeByHistoryImgUrl(imgUrl) {
     });
 }
 
-// 轮询任务识别进度
+// 轮询任务状态
 function startPolling(taskId) {
     if (pollingInterval) clearInterval(pollingInterval);
     let attempts = 0;
@@ -232,19 +228,19 @@ function startPolling(taskId) {
     }, 1000);
 }
 
-// 渲染识别结果到右侧文本框
+// 渲染识别结果
 function displayResult(text, taskId) {
     const resultDiv = document.getElementById('resultText');
     const actionsDiv = document.getElementById('resultActions');
     if (resultDiv) resultDiv.value = text || '';
-    if (actionsDiv) actionsDiv.style.display = 'block';
+    if (actionsDiv) actionsDiv.style.display = 'flex';
     const copyBtn = document.getElementById('copyBtn');
     const saveBtn = document.getElementById('saveBtn');
     if (copyBtn) copyBtn.dataset.text = text || '';
     if (saveBtn) saveBtn.dataset.taskId = taskId || '';
 }
 
-// 复制文本按钮
+// 复制按钮
 function initCopyButton() {
     const copyBtn = document.getElementById('copyBtn');
     if (!copyBtn) return;
@@ -262,7 +258,6 @@ function initCopyButton() {
     });
 }
 
-// 兼容低版本浏览器复制
 function fallbackCopy(text) {
     const textarea = document.createElement('textarea');
     textarea.value = text;
@@ -276,7 +271,7 @@ function fallbackCopy(text) {
     document.body.removeChild(textarea);
 }
 
-// 导出TXT文件按钮
+// 导出按钮
 function initSaveButton() {
     const saveBtn = document.getElementById('saveBtn');
     if (!saveBtn) return;
@@ -299,7 +294,7 @@ function initSaveButton() {
     });
 }
 
-// 加载全部历史
+// 加载历史记录
 function loadHistory() {
     const historyList = document.getElementById("historyList");
     if (!historyList) return;
@@ -318,7 +313,7 @@ function loadHistory() {
     });
 }
 
-// 渲染历史列表DOM
+// 渲染历史列表
 function renderHistoryList(items, container) {
     container.innerHTML = '';
     if (!items || !Array.isArray(items) || items.length === 0) {
@@ -328,18 +323,22 @@ function renderHistoryList(items, container) {
     items.forEach(item => {
         const li = document.createElement('li');
         li.className = 'history-item';
+
         const timeSpan = document.createElement('time');
         timeSpan.className = 'history-item__time';
         timeSpan.textContent = new Date(item.timestamp * 1000).toLocaleString();
+
         const textSpan = document.createElement('span');
         textSpan.className = 'history-item__title';
         const rawText = item.ocr_text || '';
         textSpan.textContent = rawText.length > 60 ? rawText.slice(0, 60) + '...' : rawText;
+
         const btn = document.createElement('button');
         btn.className = 'history-item__btn';
         btn.appendChild(timeSpan);
         btn.appendChild(document.createElement('br'));
         btn.appendChild(textSpan);
+
         btn.addEventListener('click', () => {
             if (!item.image_file_path) {
                 showMessage("该历史无原图地址，无法重新识别", "warning");
@@ -348,12 +347,13 @@ function renderHistoryList(items, container) {
             clearAllPreview();
             reRecognizeByHistoryImgUrl(item.image_file_path);
         });
+
         li.appendChild(btn);
         container.appendChild(li);
     });
 }
 
-// 打开/关闭历史侧边栏
+// 历史侧边栏开关
 function initHistoryButton() {
     const historyBtn = document.getElementById('historyBtn');
     const sidebar = document.getElementById('historySidebar');
@@ -366,7 +366,7 @@ function initHistoryButton() {
     });
 }
 
-// 历史关键词检索
+// 历史搜索
 function initSearchButton() {
     const searchBtn = document.getElementById('searchBtn');
     const searchInput = document.getElementById('historyInput');
@@ -400,15 +400,13 @@ async function performSearch(keyword) {
     }
 }
 
-// 上传加载状态切换
+// 加载状态切换
 function setLoadingState(loading) {
-    const uploadBtn = document.getElementById('btn-start-ocr');
     const dropZone = document.getElementById('dropZone');
-    if (uploadBtn) uploadBtn.disabled = loading;
     if (dropZone) dropZone.style.opacity = loading ? "0.5" : "1";
 }
 
-// 全局消息弹窗
+// 全局消息提示
 function showMessage(msg, type) {
     const container = document.getElementById("messageContainer");
     if (!container) return console.log(`[${type}] ${msg}`);

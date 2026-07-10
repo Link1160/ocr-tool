@@ -16,7 +16,6 @@ class BSTHistory:
         self.root = None
         self.all_data = []
 
-    # 彻底清空内存记录，修复 self.all 笔误
     def clear_all(self):
         self.root = None
         self.all_data.clear()
@@ -52,21 +51,21 @@ class BSTHistory:
         kw = keyword.lower()
         return list(reversed([i for i in self.all_data if kw in i["ocr_text"].lower()]))
 
-# 路径常量
+# 全局路径常量
 HISTORY_ROOT = "history_storage"
 BOX_SUB_DIR = os.path.join(HISTORY_ROOT, "boxed")
 TXT_SUB_DIR = os.path.join(HISTORY_ROOT, "txt")
 RECORD_JSON = os.path.join(HISTORY_ROOT, "history_records.json")
 
-# 创建文件夹，全部补全 exist_ok=True
+# 自动创建目录
 os.makedirs(HISTORY_ROOT, exist_ok=True)
 os.makedirs(BOX_SUB_DIR, exist_ok=True)
 os.makedirs(TXT_SUB_DIR, exist_ok=True)
 
-# 全局实例
+# 全局BST实例
 bst = BSTHistory()
 
-# 加载历史文件
+# 从文件加载历史记录
 def load_records_from_file():
     bst.clear_all()
     if not os.path.exists(RECORD_JSON):
@@ -76,7 +75,7 @@ def load_records_from_file():
     for item in records:
         bst.insert(item["timestamp"], item["image_file_path"], item["ocr_text"], item["box_data"])
 
-# 保存记录到文件
+# 保存历史记录到文件
 def save_records_to_file():
     data = bst.get_all_history()
     with open(RECORD_JSON, "w", encoding="utf-8") as f:
@@ -100,7 +99,7 @@ def search_records(keyword):
     load_records_from_file()
     return bst.search_by_keyword(keyword)
 
-# 一键清空全部历史（内存+文件双重清空，不会回弹）
+# 一键清空全部历史（内存+文件双重清空，无回弹）
 def full_clear_history():
     bst.clear_all()
     if os.path.exists(RECORD_JSON):
@@ -110,5 +109,5 @@ def full_clear_history():
         f.flush()
     load_records_from_file()
 
-# 程序启动加载历史
+# 程序启动自动加载历史
 load_records_from_file()

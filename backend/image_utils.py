@@ -1,5 +1,7 @@
-# ============== 顶部禁用OneDNN + PIR执行器 ==============
+# ============== 顶部环境变量，禁用OneDNN + PIR执行器 ==============
 import os
+import sys
+
 os.environ["FLAGS_use_mkldnn"] = "0"
 os.environ["FLAGS_use_mkldnn_int8"] = "0"
 os.environ["FLAGS_use_onednn"] = "0"
@@ -7,19 +9,25 @@ os.environ["FLAGS_enable_pir_in_executor"] = "0"
 os.environ["FLAGS_use_pir_inference"] = "0"
 os.environ["FLAGS_new_executor"] = "0"
 
+# 开发环境基准目录
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(BASE_DIR)
+
 import cv2
 import numpy as np
 import time
 from PIL import Image, ImageDraw
 from paddleocr import PaddleOCR
-# 【关键修复】导入历史管理模块的路径常量，全局统一，不再重复定义
+# 复用全局路径常量，保证目录统一
 from history_manager import HISTORY_ROOT, BOX_SUB_DIR, TXT_SUB_DIR
 
-# 自动创建目录（复用全局常量）
+# 自动创建存储目录
 for d in [BOX_SUB_DIR, TXT_SUB_DIR]:
     os.makedirs(d, exist_ok=True)
 
+# 初始化OCR引擎
 ocr_engine = PaddleOCR(use_angle_cls=True, lang="ch")
+
 
 class OCRResult:
     def __init__(self):
@@ -28,13 +36,14 @@ class OCRResult:
         self.box_img_path = ""
         self.txt_path = ""
 
+
 def run_ocr(img_local_path: str) -> OCRResult:
     res_obj = OCRResult()
     img = cv2.imread(img_local_path)
     if img is None:
         box_name = os.path.basename(img_local_path)
         box_save = os.path.join(BOX_SUB_DIR, box_name)
-        cv2.imwrite(box_save, np.zeros((100,100,3), dtype=np.uint8))
+        cv2.imwrite(box_save, np.zeros((100, 100, 3), dtype=np.uint8))
         res_obj.box_img_path = box_save
         return res_obj
 
@@ -45,6 +54,7 @@ def run_ocr(img_local_path: str) -> OCRResult:
     line_texts = []
 
     if ocr_out[0] is not None:
+        # 按纵向坐标排序，保证阅读顺序
         sorted_lines = sorted(ocr_out[0], key=lambda x: x[0][0][1])
         for line in sorted_lines:
             coords, (txt, score) = line
@@ -60,12 +70,14 @@ def run_ocr(img_local_path: str) -> OCRResult:
             draw.text((x1, y1 - 16), f"{score:.2f}", fill=(0, 255, 0))
             line_texts.append(txt)
 
+    # 保存标注图
     file_name = os.path.basename(img_local_path)
     box_img_full = os.path.join(BOX_SUB_DIR, file_name)
     out_bgr = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
     cv2.imwrite(box_img_full, out_bgr)
     res_obj.box_img_path = box_img_full
 
+    # 保存识别文本TXT
     base_no_ext = os.path.splitext(file_name)[0]
     txt_full = os.path.join(TXT_SUB_DIR, f"{base_no_ext}.txt")
     full_txt = "\n".join(line_texts)
@@ -76,11 +88,13 @@ def run_ocr(img_local_path: str) -> OCRResult:
 
     return res_obj
 
+
 def crop_image(origin_path, save_path, x1, y1, x2, y2):
     img = Image.open(origin_path)
     cropped = img.crop((int(x1), int(y1), int(x2), int(y2)))
     cropped.save(save_path)
     return save_path
+
 
 if __name__ == "__main__":
     from history_manager import BSTHistory
