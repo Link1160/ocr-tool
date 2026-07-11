@@ -19,7 +19,7 @@ import threading
 from flask import Flask, jsonify, request, send_file, Response, send_from_directory
 from flask_cors import CORS
 from task_queue import add_task, get_next_task, update_status, get_task_info, get_progress
-from history_manager import bst, add_ocr_record, get_all_records, search_records, RECORD_JSON, HISTORY_ROOT, \
+from history_manager import bst, add_ocr_record, get_all_records, search_records, delete_record, RECORD_JSON, HISTORY_ROOT, \
     BOX_SUB_DIR, TXT_SUB_DIR, full_clear_history
 from image_utils import run_ocr
 
@@ -121,6 +121,17 @@ def create_app():
         resp.headers["Expires"] = "0"
         return resp
 
+    @app.route('/delete_history/<timestamp>', methods=['DELETE'])
+    def delete_history(timestamp):
+        try:
+            ts = float(timestamp)
+        except ValueError:
+            return jsonify({"code": 400, "message": "无效的时间戳"}), 400
+        delete_record(ts)
+        resp = jsonify({"code": 200, "message": "已删除该条历史"})
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+        return resp
+
     @app.route("/history", methods=["GET"])
     def get_history():
         raw_data = get_all_records()
@@ -140,7 +151,8 @@ def create_app():
     def search_history():
         req_data = request.get_json()
         keyword = req_data.get("keyword", "")
-        raw_list = search_records(keyword)
+        date = req_data.get("date", "")   # "2026-07-01"
+        raw_list = search_records(keyword, date)
         result_list = []
         for item in raw_list:
             item_copy = item.copy()

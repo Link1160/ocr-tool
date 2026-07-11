@@ -1,660 +1,825 @@
-// ============================================================
-// 配置（集中管理，可扩展）
-// ============================================================
-const CONFIG = {
-  API_BASE: window.API_BASE || 'http://127.0.0.1:5000',
-  MAX_FILE_SIZE: 10 * 1024 * 1024,
-  POLL_INTERVAL_INITIAL: 1000,      // 初始轮询间隔（ms）
-  POLL_INTERVAL_MAX: 5000,           // 最大轮询间隔（ms）
-  POLL_MAX_DURATION: 120000,         // 轮询总超时（ms）
-  UPLOAD_TIMEOUT: 30000,             // 上传超时（ms）
-  HISTORY_CACHE_TTL: 60000,          // 全量历史缓存有效期（ms）
-};
+const API_BASE = "http://127.0.0.1:5000";
 
-// ============================================================
-// 全局状态（封装）
-// ============================================================
-const appState = {
-  taskId: null,
-  pollingTimer: null,          // 当前轮询的 setTimeout id
-  boxImgUrl: "",
-  pollingActive: false,
-  abortCtrl: null,             // 用于轮询请求
-  historyAbortCtrl: null,      // 用于历史/搜索请求
-  fullHistoryCache: { data: null, timestamp: 0 },
+let currentTaskId = "";
+let timer = null;
+let selectedFiles = [];
+let cancelRequested = false;
 
-  // 重置轮询
-  resetPolling() {
-    if (this.pollingTimer) {
-      clearTimeout(this.pollingTimer);
-      this.pollingTimer = null;
-    }
-    this.pollingActive = false;
-    if (this.abortCtrl) {
-      this.abortCtrl.abort();
-      this.abortCtrl = null;
-    }
-    hidePersistentMessage();
-  },
+// 裁剪状态
+let currentFileIndex = 0;
+let currentImage = null;
+let cropBox = null;
+let isCropping = false;
+let cropStart = null;
 
-  // 取消历史请求
-  cancelHistoryRequest() {
-    if (this.historyAbortCtrl) {
-      this.historyAbortCtrl.abort();
-      this.historyAbortCtrl = null;
-    }
-  },
+// 缩放 & 平移状态
+let zoomScale = 1;
+let panX = 0;
+let panY = 0;
+let isPanning = false;
+let panStartX = 0;
+let panStartY = 0;
+let baseScale = 1; // 图片适配容器的初始缩放比
 
-  // 完全重置
-  fullReset() {
-    this.resetPolling();
-    this.taskId = null;
-    this.boxImgUrl = "";
-  }
-};
+// 裁剪弹窗队列
+let cropQueue = [];       // 待裁剪的原始 File[]
+let cropIndex = 0;        // 当前裁剪第几张
+let croppedFiles = [];    // 裁剪后的文件列表（File 对象）
 
-// ============================================================
-// DOM 缓存
-// ============================================================
 const $ = (id) => document.getElementById(id);
-const dom = {
-  dropZone: $('dropZone'),
-  fileInput: $('fileInput'),
-  resultText: $('resultText'),
-  resultActions: $('resultActions'),
-  previewWrap: $('box-preview-wrap'),
-  previewImg: $('box-preview-img'),
-  previewEmpty: $('preview-empty'),
-  historyList: $('historyList'),
-  historySidebar: $('historySidebar'),
-  historyInput: $('historyInput'),
-  copyBtn: $('copyBtn'),
-  saveBtn: $('saveBtn'),
-  clearPreviewBtn: $('btn-clear-preview'),
-  clearResultBtn: $('btn-clear-result'),
-  clearHistoryBtn: $('btn-clear-history'),
-  historyBtn: $('historyBtn'),
-  searchBtn: $('searchBtn'),
-  messageContainer: $('messageContainer'),
-  loadingOverlay: $('loadingOverlay'),
-};
+
+document.addEventListener("DOMContentLoaded", () => {
+  bindUpload();
+  bindButtons();
+  bindCropTools();
+  bindCropModal();
+  loadHistory(true);
+});
+
+// ============================================================
+// 上传绑定
+// ============================================================
+function bindUpload() {
+  const zone = $("upload-zone");
+  const input = $("file-input");
+
+  if (!zone || !input) return;
+
+  zone.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    zone.classList.add("drag-over");
+  });
+
+  zone.addEventListener("dragleave", () => zone.classList.remove("drag-over"));
+
+  zone.addEventListener("drop", (event) => {
+    event.preventDefault();
+    zone.classList.remove("drag-over");
+    chooseFiles([...event.dataTransfer.files]);
+  });
+
+  input.addEventListener("change", () => {
+    chooseFiles([...input.files]);
+    input.value = "";
+  });
+
+  document.addEventListener("paste", (event) => {
+    chooseFiles([...event.clipboardData.files]);
+  });
+}
+
+// ============================================================
+// 按钮绑定
+// ============================================================
+function bindButtons() {
+  $("btn-start-ocr")?.addEventListener("click", startOcr);
+  $("btn-cancel-ocr")?.addEventListener("click", cancelOcr);
+  $("btn-clear-preview")?.addEventListener("click", clearPreview);
+  $("btn-add-more")?.addEventListener("click", () => {
+    const tempInput = document.createElement("input");
+    tempInput.type = "file";
+    tempInput.accept = "image/*";
+    tempInput.multiple = true;
+    tempInput.addEventListener("change", () => {
+      chooseFiles([...tempInput.files]);
+    });
+    tempInput.click();
+  });
+  $("btn-clear-result")?.addEventListener("click", clearResult);
+  $("btn-copy")?.addEventListener("click", copyText);
+  $("btn-save-txt")?.addEventListener("click", downloadText);
+  $("btn-clear-history")?.addEventListener("click", clearHistory);
+  $("btn-toggle-history")?.addEventListener("click", toggleHistory);
+let searchTimer = null;
+
+  $("btn-search")?.addEventListener("click", () => {
+    clearTimeout(searchTimer);
+    searchHistory();
+  });
+  $("history-search")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      clearTimeout(searchTimer);
+      searchHistory();
+    }
+  });
+  $("history-search")?.addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(searchHistory, 300);
+  });
+  // 点击日期文本框时动态创建原生 date 输入框来弹出选择器
+  $("history-date")?.addEventListener("click", () => {
+    const temp = document.createElement("input");
+    temp.type = "date";
+    temp.style.cssText = "position:fixed;top:-9999px;left:-9999px;opacity:0;";
+    document.body.appendChild(temp);
+
+    temp.addEventListener("change", () => {
+      const val = temp.value;
+      const display = $("history-date");
+      if (display) display.value = val;
+      if (val) searchHistory();
+      document.body.removeChild(temp);
+    });
+
+    // 如果用户取消选择（失焦且无值），清理临时元素
+    temp.addEventListener("blur", () => {
+      setTimeout(() => {
+        if (temp.parentNode) document.body.removeChild(temp);
+      }, 300);
+    });
+
+    if (temp.showPicker) {
+      temp.showPicker();
+    } else {
+      temp.click();
+    }
+  });
+
+  // 清除日期
+  $("btn-clear-date")?.addEventListener("click", () => {
+    const display = $("history-date");
+    if (display) display.value = "";
+    searchHistory();
+  });
+  $("btn-recognize-all")?.addEventListener("click", recognizeAll);
+  $("btn-recognize-current")?.addEventListener("click", recognizeCurrent);
+}
+
+function toggleHistory() {
+  const panel = $("sidebar");
+  const button = $("btn-toggle-history");
+  if (!panel || !button) return;
+
+  const collapsed = panel.classList.toggle("is-collapsed");
+  button.textContent = collapsed ? "展开历史" : "收起历史";
+}
+
+// ============================================================
+// 文件选择 → 裁剪弹窗 → 预览
+// ============================================================
+function chooseFiles(files) {
+  const images = files.filter((file) => file.type.startsWith("image/"));
+
+  if (!images.length) {
+    showMessage("请上传图片文件", "error");
+    return;
+  }
+
+  cropQueue = images;
+  cropIndex = 0;
+  // 追加模式下保留已有图片，首次上传时清空
+  if (!croppedFiles.length) croppedFiles = [];
+  openCropModal();
+}
+
+function switchToPreviewMode() {
+  const uploadMode = $("upload-mode");
+  const previewMode = $("preview-mode");
+  if (uploadMode) uploadMode.hidden = true;
+  if (previewMode) previewMode.hidden = false;
+}
+
+function switchToUploadMode() {
+  const uploadMode = $("upload-mode");
+  const previewMode = $("preview-mode");
+  if (uploadMode) uploadMode.hidden = false;
+  if (previewMode) previewMode.hidden = true;
+}
+
+function renderThumbs() {
+  const container = $("preview-thumbs");
+  if (!container) return;
+  container.innerHTML = "";
+
+  croppedFiles.forEach((file, index) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `preview-thumb${index === currentFileIndex ? " is-active" : ""}`;
+    btn.innerHTML = `
+      <img src="${URL.createObjectURL(file)}" alt="${file.name}">
+      <span>${index + 1}. ${file.name}</span>
+    `;
+    btn.addEventListener("click", () => {
+      currentFileIndex = index;
+      renderThumbs();
+      showPreviewImage(index);
+    });
+    container.appendChild(btn);
+  });
+}
+
+function showPreviewImage(index) {
+  const container = $("preview-images");
+  if (!container || !croppedFiles[index]) return;
+  container.innerHTML = `<img src="${URL.createObjectURL(croppedFiles[index])}" alt="预览">`;
+}
+
+function loadImageToCanvas(index) {
+  const file = cropQueue[index];
+  const canvas = $("crop-canvas");
+  const body = $("crop-modal-body");
+  if (!file || !canvas || !body) return;
+
+  const image = new Image();
+  image.onload = () => {
+    currentImage = image;
+    const maxWidth = body.clientWidth || 800;
+    const maxHeight = body.clientHeight || 500;
+    baseScale = Math.min(1, maxWidth / image.width, maxHeight / image.height);
+    zoomScale = 1;
+    panX = 0;
+    panY = 0;
+
+    canvas.width = Math.max(1, Math.round(image.width * baseScale));
+    canvas.height = Math.max(1, Math.round(image.height * baseScale));
+    applyTransform();
+    drawCropCanvas();
+  };
+  image.src = URL.createObjectURL(file);
+}
+
+function applyTransform() {
+  const canvas = $("crop-canvas");
+  if (!canvas) return;
+  canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomScale})`;
+
+  const label = $("zoom-level");
+  if (label) label.textContent = Math.round(zoomScale * 100) + "%";
+}
+
+// ============================================================
+// 裁剪工具
+// ============================================================
+function bindCropTools() {
+  const canvas = $("crop-canvas");
+  const body = $("crop-modal-body");
+  if (!canvas || !body) return;
+
+  // ---- 鼠标按下 ----
+  canvas.addEventListener("mousedown", (event) => {
+    if (event.button === 1 || (event.button === 0 && event.altKey)) {
+      // 中键 或 Alt+左键 → 平移
+      isPanning = true;
+      panStartX = event.clientX - panX;
+      panStartY = event.clientY - panY;
+      canvas.style.cursor = "grabbing";
+      event.preventDefault();
+      return;
+    }
+    if (event.button === 0 && currentImage) {
+      // 左键 → 截取
+      isCropping = true;
+      cropStart = getCanvasPoint(event);
+      cropBox = { x: cropStart.x, y: cropStart.y, w: 0, h: 0 };
+      drawCropCanvas();
+    }
+  });
+
+  // ---- 鼠标移动 ----
+  canvas.addEventListener("mousemove", (event) => {
+    if (isPanning) {
+      panX = event.clientX - panStartX;
+      panY = event.clientY - panStartY;
+      applyTransform();
+      return;
+    }
+    if (!isCropping || !cropStart) return;
+    const point = getCanvasPoint(event);
+    cropBox = {
+      x: Math.min(cropStart.x, point.x),
+      y: Math.min(cropStart.y, point.y),
+      w: Math.abs(point.x - cropStart.x),
+      h: Math.abs(point.y - cropStart.y),
+    };
+    drawCropCanvas();
+  });
+
+  // ---- 鼠标松开 ----
+  document.addEventListener("mouseup", () => {
+    if (isPanning) {
+      isPanning = false;
+      canvas.style.cursor = "crosshair";
+    }
+    if (!isCropping) return;
+    isCropping = false;
+    if (cropBox && (cropBox.w < 10 || cropBox.h < 10)) {
+      cropBox = null;
+    }
+    drawCropCanvas();
+  });
+
+  // ---- 滚轮缩放 ----
+  body.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    const rect = body.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+
+    const oldScale = zoomScale;
+    const delta = event.deltaY > 0 ? 0.9 : 1.1;
+    zoomScale = Math.max(0.5, Math.min(10, zoomScale * delta));
+
+    // 以鼠标位置为中心缩放
+    panX = mouseX - (mouseX - panX) * (zoomScale / oldScale);
+    panY = mouseY - (mouseY - panY) * (zoomScale / oldScale);
+
+    applyTransform();
+    drawCropCanvas();
+  }, { passive: false });
+
+  // ---- 缩放按钮 ----
+  $("btn-zoom-in")?.addEventListener("click", () => zoomBy(1.25));
+  $("btn-zoom-out")?.addEventListener("click", () => zoomBy(0.8));
+  $("btn-zoom-reset")?.addEventListener("click", () => {
+    zoomScale = 1;
+    panX = 0;
+    panY = 0;
+    applyTransform();
+    drawCropCanvas();
+  });
+}
+
+function zoomBy(factor) {
+  const body = $("crop-modal-body");
+  if (!body) return;
+  const rect = body.getBoundingClientRect();
+  const centerX = rect.width / 2;
+  const centerY = rect.height / 2;
+
+  const oldScale = zoomScale;
+  zoomScale = Math.max(0.5, Math.min(10, zoomScale * factor));
+
+  panX = centerX - (centerX - panX) * (zoomScale / oldScale);
+  panY = centerY - (centerY - panY) * (zoomScale / oldScale);
+
+  applyTransform();
+  drawCropCanvas();
+}
+
+function getCanvasPoint(event) {
+  const canvas = $("crop-canvas");
+  const rect = canvas.getBoundingClientRect();
+  // getBoundingClientRect 已包含 CSS transform，所以直接用
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  return {
+    x: (event.clientX - rect.left) * scaleX,
+    y: (event.clientY - rect.top) * scaleY,
+  };
+}
+
+function drawCropCanvas() {
+  const canvas = $("crop-canvas");
+  if (!canvas || !currentImage) return;
+
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(currentImage, 0, 0, canvas.width, canvas.height);
+
+  if (!cropBox) return;
+
+  ctx.save();
+  // 遮罩外围：先画半透明黑色覆盖全图，再用 clip 恢复截取区域的原图
+  ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // 清除截取区域的遮罩，重新绘制原图内容
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(cropBox.x, cropBox.y, cropBox.w, cropBox.h);
+  ctx.clip();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(currentImage, 0, 0, canvas.width, canvas.height);
+  ctx.restore();
+  // 画截取框边框
+  ctx.strokeStyle = "#1677ff";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(cropBox.x, cropBox.y, cropBox.w, cropBox.h);
+  ctx.restore();
+}
+
+// ============================================================
+// 裁剪弹窗
+// ============================================================
+function bindCropModal() {
+  $("btn-crop-confirm")?.addEventListener("click", confirmCrop);
+  $("btn-crop-skip")?.addEventListener("click", skipCrop);
+}
+
+function openCropModal() {
+  cropIndex = 0;
+  cropBox = null;
+  const modal = $("crop-modal");
+  if (modal) modal.hidden = false;
+  loadCropImage();
+}
+
+function closeCropModal() {
+  const modal = $("crop-modal");
+  if (modal) modal.hidden = true;
+}
+
+function loadCropImage() {
+  if (cropIndex >= cropQueue.length) {
+    // 所有图片处理完毕，进入预览
+    closeCropModal();
+    selectedFiles = croppedFiles.slice();
+    currentFileIndex = 0;
+    switchToPreviewMode();
+    renderThumbs();
+    if (croppedFiles.length) showPreviewImage(0);
+    showMessage(`已完成 ${croppedFiles.length} 张图片截取`, "success");
+    return;
+  }
+
+  cropBox = null;
+  const counter = $("crop-counter");
+  if (counter) counter.textContent = `${cropIndex + 1} / ${cropQueue.length}`;
+  loadImageToCanvas(cropIndex);
+}
+
+async function confirmCrop() {
+  try {
+    if (cropBox && (cropBox.w >= 10 && cropBox.h >= 10)) {
+      const file = await getCropFile();
+      croppedFiles.push(file);
+    } else {
+      croppedFiles.push(cropQueue[cropIndex]);
+    }
+  } catch (error) {
+    showMessage(`截取失败：${error.message}`, "error");
+    croppedFiles.push(cropQueue[cropIndex]);
+  }
+  cropIndex++;
+  loadCropImage();
+}
+
+function skipCrop() {
+  croppedFiles.push(cropQueue[cropIndex]);
+  cropIndex++;
+  loadCropImage();
+}
+
+function getCropFile() {
+  return new Promise((resolve, reject) => {
+    const source = cropQueue[cropIndex];
+    const canvas = $("crop-canvas");
+    if (!source || !canvas || !currentImage) {
+      reject(new Error("没有可裁剪的图片"));
+      return;
+    }
+
+    const box = cropBox || { x: 0, y: 0, w: canvas.width, h: canvas.height };
+    const scaleX = currentImage.naturalWidth / canvas.width;
+    const scaleY = currentImage.naturalHeight / canvas.height;
+    const cropCanvas = document.createElement("canvas");
+    cropCanvas.width = Math.max(1, Math.round(box.w * scaleX));
+    cropCanvas.height = Math.max(1, Math.round(box.h * scaleY));
+
+    const ctx = cropCanvas.getContext("2d");
+    ctx.drawImage(
+      currentImage,
+      box.x * scaleX, box.y * scaleY, box.w * scaleX, box.h * scaleY,
+      0, 0, cropCanvas.width, cropCanvas.height
+    );
+
+    cropCanvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error("裁剪图片失败"));
+        return;
+      }
+      const name = `crop_${currentFileIndex + 1}_${source.name.replace(/\.[^.]+$/, "")}.png`;
+      resolve(new File([blob], name, { type: "image/png" }));
+    }, "image/png");
+  });
+}
+
+// ============================================================
+// 识别
+// ============================================================
+async function recognizeAll() {
+  if (!selectedFiles.length) {
+    showMessage("请先选择图片", "warning");
+    return;
+  }
+  await recognizeFiles(selectedFiles, 0);
+}
+
+async function recognizeCurrent() {
+  const file = selectedFiles[currentFileIndex];
+  if (!file) {
+    showMessage("请先选择图片", "warning");
+    return;
+  }
+  await recognizeFiles([file], currentFileIndex);
+}
+
+async function startOcr() {
+  if (!selectedFiles.length) {
+    showMessage("请先选择或粘贴图片", "warning");
+    return;
+  }
+  await recognizeFiles(selectedFiles, 0);
+}
+
+async function recognizeFiles(files, startIndex) {
+  setLoading(true);
+  cancelRequested = false;
+  showResult("");
+
+  try {
+    const results = [];
+
+    for (let index = 0; index < files.length; index += 1) {
+      if (cancelRequested) break;
+
+      const file = files[index];
+      showMessage(`正在识别第 ${index + 1}/${files.length} 张`, "info");
+
+      const taskId = await uploadOne(file);
+      const text = await pollResult(taskId);
+      results.push(formatImageResult(startIndex + index, file, text));
+      showResult(results.join("\n\n"));
+    }
+
+    if (!cancelRequested) {
+      loadHistory(true);
+      showMessage("全部图片识别完成", "success");
+    }
+  } catch (error) {
+    showMessage(`识别失败：${error.message}`, "error");
+  } finally {
+    setLoading(false);
+  }
+}
+
+function formatImageResult(index, file, text) {
+  const title = `第 ${index + 1} 张：${file.name}`;
+  const line = "=".repeat(title.length);
+  return `${line}\n${title}\n${line}\n${text || "未识别到文字"}`;
+}
+
+async function uploadOne(file) {
+  const data = new FormData();
+  data.append("image", file);
+
+  const res = await fetch(`${API_BASE}/upload`, {
+    method: "POST",
+    body: data,
+  });
+  const json = await res.json();
+
+  if (json.code !== 200) throw new Error(json.msg || json.error || "上传失败");
+
+  currentTaskId = json.task_id || "";
+  return currentTaskId;
+}
+
+function pollResult(taskId) {
+  if (!taskId) return Promise.reject(new Error("任务 ID 为空"));
+  if (timer) clearInterval(timer);
+
+  let count = 0;
+  return new Promise((resolve, reject) => {
+    timer = setInterval(async () => {
+      count += 1;
+
+      if (cancelRequested) {
+        clearInterval(timer);
+        timer = null;
+        reject(new Error("已取消识别"));
+        return;
+      }
+
+      if (count > 120) {
+        clearInterval(timer);
+        timer = null;
+        reject(new Error("识别超时，请重试"));
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/status/${taskId}`);
+        const json = await res.json();
+        if (json.code !== 200) throw new Error(json.error || "查询失败");
+
+        const data = json.data || {};
+        if (data.status === "done") {
+          clearInterval(timer);
+          timer = null;
+          resolve(data.result || "");
+        }
+
+        if (data.status === "failed" || data.status === "error") {
+          throw new Error(data.error || "识别失败");
+        }
+      } catch (error) {
+        clearInterval(timer);
+        timer = null;
+        reject(error);
+      }
+    }, 1000);
+  });
+}
+
+function cancelOcr() {
+  cancelRequested = true;
+  if (timer) clearInterval(timer);
+  timer = null;
+  setLoading(false);
+}
+
+// ============================================================
+// 结果区
+// ============================================================
+function showResult(text) {
+  const result = $("result-text");
+  const meta = $("result-meta");
+
+  if (result) result.value = text;
+  if (meta) meta.textContent = `字数：${text.length}`;
+}
+
+function clearPreview() {
+  selectedFiles = [];
+  currentFileIndex = 0;
+  currentImage = null;
+  cropBox = null;
+  isCropping = false;
+  cropStart = null;
+
+  switchToUploadMode();
+
+  const thumbs = $("preview-thumbs");
+  const canvas = $("crop-canvas");
+  if (thumbs) thumbs.innerHTML = "";
+  if (canvas) {
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
+function clearResult() {
+  currentTaskId = "";
+  showResult("");
+}
+
+async function copyText() {
+  const text = $("result-text")?.value || "";
+  if (!text) {
+    showMessage("暂无内容可复制", "warning");
+    return;
+  }
+
+  await navigator.clipboard.writeText(text);
+  showMessage("复制成功", "success");
+}
+
+function downloadText() {
+  const text = $("result-text")?.value || "";
+  if (!text) {
+    showMessage("暂无内容可下载", "warning");
+    return;
+  }
+
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  const now = new Date();
+  const ts = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}_${String(now.getHours()).padStart(2,"0")}${String(now.getMinutes()).padStart(2,"0")}${String(now.getSeconds()).padStart(2,"0")}`;
+  link.download = `ocr_result_${ts}.txt`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+// ============================================================
+// 历史记录
+// ============================================================
+async function loadHistory(silent = false) {
+  const list = $("history-list");
+  if (!list) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/history?t=${Date.now()}`, { cache: "no-store" });
+    const json = await res.json();
+    renderHistory(json.data || []);
+  } catch (error) {
+    renderHistory([]);
+    if (!silent) showMessage(`加载历史失败：${error.message}`, "error");
+  }
+}
+
+function renderHistory(items) {
+  const list = $("history-list");
+  const template = $("history-item-template");
+  if (!list) return;
+
+  list.innerHTML = "";
+
+  if (!items.length) {
+    list.innerHTML = '<li class="history-list__empty">暂无历史记录</li>';
+    return;
+  }
+
+  items.forEach((item) => {
+    const row = template.content.cloneNode(true);
+    const text = item.ocr_text || "无识别文本";
+    row.querySelector(".history-item__title").textContent =
+      text.length > 60 ? `${text.slice(0, 60)}...` : text;
+    row.querySelector(".history-item__time").textContent = formatTime(item.timestamp);
+    row.querySelector(".history-item__btn").addEventListener("click", () => {
+      showResult(item.ocr_text || "");
+    });
+
+    // 单条删除
+    row.querySelector(".history-item__del").addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (!confirm("确定删除该条历史记录？")) return;
+      try {
+        const res = await fetch(`${API_BASE}/delete_history/${item.timestamp}`, { method: "DELETE" });
+        const json = await res.json();
+        if (json.code === 200) {
+          showMessage("已删除", "success");
+          loadHistory(true);
+        } else {
+          showMessage(`删除失败：${json.message || "服务器异常"}`, "error");
+        }
+      } catch (error) {
+        showMessage(`删除失败：${error.message}`, "error");
+      }
+    });
+
+    list.appendChild(row);
+  });
+}
+
+async function searchHistory() {
+  const keyword = $("history-search")?.value.trim() || "";
+  const date = $("history-date")?.value || "";   // "2026-07-01"
+
+  const body = { keyword };
+  if (date) body.date = date;
+
+  // 无筛选条件时加载全部
+  if (!keyword && !date) {
+    loadHistory(true);
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/search`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json();
+    renderHistory(json.data || []);
+  } catch (error) {
+    showMessage(`搜索失败：${error.message}`, "error");
+  }
+}
+
+async function clearHistory() {
+  if (!confirm("确定清空所有历史记录？")) return;
+
+  try {
+    await fetch(`${API_BASE}/clear_history`, { method: "POST" });
+    renderHistory([]);
+    showMessage("历史已清空", "success");
+  } catch (error) {
+    showMessage(`清空失败：${error.message}`, "error");
+  }
+}
 
 // ============================================================
 // 工具函数
 // ============================================================
-function debounce(fn, delay) {
-  let timer = null;
-  return function (...args) {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn.apply(this, args), delay);
-  };
+function setLoading(loading) {
+  const start = $("btn-start-ocr");
+  const cancel = $("btn-cancel-ocr");
+  if (start) start.disabled = loading;
+  if (cancel) cancel.disabled = !loading;
 }
 
-function setLoadingState(loading) {
-  if (dom.dropZone) {
-    dom.dropZone.style.opacity = loading ? "0.6" : "1";
-    dom.dropZone.style.cursor = loading ? "wait" : "pointer";
-  }
-  if (dom.loadingOverlay) {
-    dom.loadingOverlay.style.display = loading ? "flex" : "none";
-  }
+function formatTime(value) {
+  if (!value) return "";
+  // 后端 timestamp 是秒级（time.time()），统一乘 1000 转毫秒
+  const time = value * 1000;
+  return new Date(time).toLocaleString();
 }
 
-// ----- 临时消息 -----
-function showMessage(msg, type = 'info') {
-  const container = dom.messageContainer;
-  if (!container) return console.log(`[${type}] ${msg}`);
-  const existing = container.querySelectorAll(`.message.${type}`);
-  existing.forEach(el => el.remove());
-  const div = document.createElement('div');
-  div.className = `message ${type}`;
-  div.textContent = msg;
-  container.appendChild(div);
-  setTimeout(() => div.remove(), 3000);
-}
-
-// ----- 持久消息 -----
-let persistentMessageEl = null;
-
-function showPersistentMessage(msg, type = 'info') {
-  hidePersistentMessage();
-  const container = dom.messageContainer;
-  if (!container) return;
-  const div = document.createElement('div');
-  div.className = `message ${type} persistent`;
-  div.textContent = msg;
-  container.appendChild(div);
-  persistentMessageEl = div;
-}
-
-function hidePersistentMessage() {
-  if (persistentMessageEl) {
-    persistentMessageEl.remove();
-    persistentMessageEl = null;
-  }
-}
-
-// ----- 统一错误处理（细化错误信息）-----
-function handleError(err, context = '操作', shouldStopPolling = false) {
-  if (err.name === 'AbortError') return;
-  let msg = err.message || '未知错误';
-  // 细化网络错误
-  if (err.name === 'TypeError' || err.message.includes('fetch')) {
-    msg = '网络连接异常，请检查网络后重试';
-  } else if (err.name === 'TimeoutError') {
-    msg = '请求超时，请稍后重试';
-  } else if (err.status) {
-    // 如果错误对象带有 status 属性，拼接状态码
-    msg = `服务器响应异常 (${err.status}) ${err.statusText || ''}`.trim();
-  }
-  showMessage(`${context}失败：${msg}`, 'error');
-  if (shouldStopPolling) {
-    appState.resetPolling();
-    setLoadingState(false);
-  }
-}
-
-// ============================================================
-// 核心功能
-// ============================================================
-
-// ----- 公共上传方法（带超时）-----
-async function uploadImageFile(file) {
-  const formData = new FormData();
-  formData.append('image', file);
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => {
-    controller.abort();
-    // 抛出超时错误
-    const error = new Error('上传超时');
-    error.name = 'TimeoutError';
-    throw error;
-  }, CONFIG.UPLOAD_TIMEOUT);
-
-  try {
-    const res = await fetch(`${CONFIG.API_BASE}/upload`, {
-      method: 'POST',
-      body: formData,
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    if (!res.ok) {
-      const err = new Error(`HTTP ${res.status}`);
-      err.status = res.status;
-      err.statusText = res.statusText;
-      throw err;
-    }
-    const resp = await res.json();
-    if (!resp || resp.code !== 200 || !resp.task_id) {
-      throw new Error(resp?.msg || "上传失败或未获取任务ID");
-    }
-    return resp.task_id;
-  } catch (err) {
-    clearTimeout(timeoutId);
-    throw err;
-  }
-}
-
-// ----- 清除预览 -----
-function clearAllPreview() {
-  dom.previewWrap.hidden = true;
-  dom.previewImg.src = "";
-  dom.previewEmpty.style.display = "block";
-  appState.boxImgUrl = "";
-  appState.taskId = null;
-  appState.resetPolling();
-}
-
-// ----- 文件上传处理 -----
-async function handleFileUpload(file) {
-  // 增强文件类型校验
-  const allowMime = ['image/jpeg','image/png','image/gif','image/webp','image/bmp'];
-  const allowExt = ['jpg','jpeg','png','gif','webp','bmp'];
-  const fileName = file.name.toLowerCase();
-  const fileExt = fileName.split('.').pop();
-  const isMimeOk = allowMime.includes(file.type);
-  const isExtOk = allowExt.includes(fileExt);
-  // 兼容：如果 type 为空，仅靠扩展名；否则两者需其一
-  const isImage = (file.type === '' && isExtOk) || (isMimeOk || isExtOk);
-
-  if (!isImage) {
-    showMessage('当前不支持该文件类型，请上传jpg/png/gif/webp/bmp图片', 'error');
-    return;
-  }
-  if (file.size > CONFIG.MAX_FILE_SIZE) {
-    showMessage(`文件过大（超过 ${CONFIG.MAX_FILE_SIZE/1024/1024}MB），请压缩后重试`, 'error');
-    return;
+function showMessage(text, type = "info") {
+  let box = $("message-container");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "message-container";
+    box.className = "message-container";
+    document.body.appendChild(box);
   }
 
-  showMessage('正在上传图片...', 'info');
-  setLoadingState(true);
+  const item = document.createElement("div");
+  item.className = `message message--${type}`;
+  item.textContent = text;
+  box.appendChild(item);
 
-  try {
-    const taskId = await uploadImageFile(file);
-    showMessage('上传成功，开始识别...', 'success');
-    appState.taskId = taskId;
-    startPolling(taskId);
-  } catch (err) {
-    handleError(err, '上传', true);
-  }
+  setTimeout(() => item.remove(), 2500);
 }
-
-// ----- 历史记录重新识别（保持不变，但复用上传超时）-----
-async function reRecognizeByHistoryImgUrl(imgUrl) {
-  showMessage("正在重新加载图片...", "info");
-  setLoadingState(true);
-  try {
-    const res = await fetch(imgUrl, { mode: 'cors' });
-    if (!res.ok) throw new Error(`获取历史图片失败 (HTTP ${res.status})`);
-    const blob = await res.blob();
-    const ext = imgUrl.split('.').pop().split('?')[0] || 'jpg';
-    const file = new File([blob], `history_temp.${ext}`, { type: blob.type || 'image/jpeg' });
-    const taskId = await uploadImageFile(file);
-    showMessage('重新识别已开始', 'success');
-    appState.taskId = taskId;
-    startPolling(taskId);
-  } catch (err) {
-    handleError(err, '重新识别', true);
-  }
-}
-
-// ----- 轮询（使用 setTimeout 链 + 指数退避）-----
-function startPolling(taskId) {
-  appState.resetPolling();
-  appState.pollingActive = true;
-  appState.taskId = taskId;
-  showPersistentMessage('正在识别图片...', 'info');
-
-  const startTime = Date.now();
-  let currentInterval = CONFIG.POLL_INTERVAL_INITIAL;
-
-  // 取消之前的 AbortController
-  if (appState.abortCtrl) {
-    appState.abortCtrl.abort();
-  }
-  appState.abortCtrl = new AbortController();
-
-  // 定义轮询任务（递归）
-  const pollTask = async () => {
-    // 检查是否仍处于活动状态
-    if (!appState.pollingActive || appState.taskId !== taskId) {
-      appState.resetPolling();
-      return;
-    }
-
-    // 检查总耗时是否超时
-    if (Date.now() - startTime > CONFIG.POLL_MAX_DURATION) {
-      appState.resetPolling();
-      setLoadingState(false);
-      showMessage('识别超时，请重新上传图片', 'error');
-      return;
-    }
-
-    // 发起请求
-    try {
-      const res = await fetch(`${CONFIG.API_BASE}/status/${taskId}`, {
-        signal: appState.abortCtrl.signal,
-      });
-      if (!res.ok) {
-        const err = new Error(`HTTP ${res.status}`);
-        err.status = res.status;
-        err.statusText = res.statusText;
-        throw err;
-      }
-      const resp = await res.json();
-
-      // 再次检查状态（可能在请求期间被重置）
-      if (!appState.pollingActive || appState.taskId !== taskId) return;
-
-      if (!resp || resp.code !== 200) {
-        throw new Error(resp?.msg || "查询任务状态失败");
-      }
-
-      const data = resp.data;
-      if (data.status === "done") {
-        // 任务完成
-        appState.resetPolling();
-        setLoadingState(false);
-        displayResult(data.result || '', taskId);
-        if (data.box_img_url) {
-          appState.boxImgUrl = data.box_img_url;
-          dom.previewWrap.hidden = false;
-          dom.previewImg.src = appState.boxImgUrl;
-          dom.previewEmpty.style.display = "none";
-        }
-        showMessage('识别完成！', 'success');
-        // 刷新历史缓存
-        appState.fullHistoryCache.data = null;
-        appState.fullHistoryCache.timestamp = 0;
-        loadHistoryDebounced();
-        return;
-      } else if (data.status === 'pending' || data.status === 'doing') {
-        // 继续轮询，更新持久消息（显示已等待秒数）
-        const elapsed = Math.round((Date.now() - startTime) / 1000);
-        showPersistentMessage(`正在识别图片... (${elapsed}s)`, 'info');
-        // 计算下次间隔（指数退避，不超过最大值）
-        currentInterval = Math.min(currentInterval * 1.5, CONFIG.POLL_INTERVAL_MAX);
-        // 设置下一次轮询
-        appState.pollingTimer = setTimeout(pollTask, currentInterval);
-      } else {
-        // 其他状态视为失败
-        appState.resetPolling();
-        setLoadingState(false);
-        showMessage(`识别失败: ${data.error || "未知错误"}`, 'error');
-      }
-    } catch (err) {
-      if (err.name === 'AbortError') return;
-      // 网络错误等
-      if (!appState.pollingActive || appState.taskId !== taskId) return;
-      // 错误处理：停止轮询并提示，但可选重试？这里保持原逻辑，直接停止
-      appState.resetPolling();
-      setLoadingState(false);
-      handleError(err, '查询任务状态', false);
-    }
-  };
-
-  // 开始第一次轮询（延迟一个间隔）
-  appState.pollingTimer = setTimeout(pollTask, CONFIG.POLL_INTERVAL_INITIAL);
-}
-
-// ----- 显示结果 -----
-function displayResult(text, taskId) {
-  dom.resultText.value = text || '';
-  dom.resultActions.style.display = 'flex';
-  dom.copyBtn.dataset.text = text || '';
-  dom.saveBtn.dataset.taskId = taskId || '';
-}
-
-// ============================================================
-// 按钮功能
-// ============================================================
-
-function initCopyButton() {
-  dom.copyBtn?.addEventListener('click', function() {
-    const text = this.dataset.text || '';
-    if (!text) {
-      showMessage('暂无内容可复制', 'warning');
-      return;
-    }
-    navigator.clipboard.writeText(text).then(() => {
-      showMessage('复制成功', 'success');
-    }).catch(() => {
-      const textarea = document.createElement('textarea');
-      textarea.value = text;
-      textarea.style.position = 'fixed';
-      textarea.style.left = '-9999px';
-      textarea.style.top = '-9999px';
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      showMessage('复制成功', 'success');
-      document.body.removeChild(textarea);
-    });
-  });
-}
-
-function initSaveButton() {
-  dom.saveBtn?.addEventListener('click', async function() {
-    const taskId = this.dataset.taskId || appState.taskId;
-    if (!taskId) {
-      showMessage('无识别任务，无法导出', 'warning');
-      return;
-    }
-    try {
-      const res = await fetch(`${CONFIG.API_BASE}/export/${taskId}`);
-      if (!res.ok) throw new Error(`导出失败 (HTTP ${res.status})`);
-      const blob = await res.blob();
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `ocr_result_${taskId}.txt`;
-      document.body.appendChild(link);
-      link.click();
-      URL.revokeObjectURL(link.href);
-      document.body.removeChild(link);
-      showMessage('文件已下载', 'success');
-    } catch (err) {
-      handleError(err, '导出', false);
-    }
-  });
-}
-
-function initClearPreviewBtn() {
-  dom.clearPreviewBtn?.addEventListener("click", clearAllPreview);
-}
-
-function initClearResultBtn() {
-  dom.clearResultBtn?.addEventListener("click", () => {
-    dom.resultText.value = "";
-    dom.resultActions.style.display = "none";
-    appState.taskId = null;
-  });
-}
-
-function initClearHistoryBtn() {
-  dom.clearHistoryBtn?.addEventListener("click", async () => {
-    if (!confirm("确定永久清空全部识别历史？此操作不可撤销")) return;
-    try {
-      const res = await fetch(`${CONFIG.API_BASE}/clear_history`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" }
-      });
-      const resp = await res.json();
-      if (resp.code === 200) {
-        showMessage("历史已全部清空", "success");
-        dom.historyList.innerHTML = '<li class="history-list__empty">暂无历史记录</li>';
-        appState.fullHistoryCache.data = null;
-        appState.fullHistoryCache.timestamp = 0;
-      } else {
-        showMessage(`清空失败：${resp.message || "服务器异常"}`, "error");
-      }
-    } catch (err) {
-      handleError(err, '清空历史', false);
-    }
-  });
-}
-
-// ============================================================
-// 拖拽 / 文件选择
-// ============================================================
-function initUploadArea() {
-  const dropZone = dom.dropZone;
-  if (!dropZone) return;
-  dropZone.addEventListener('dragover', e => {
-    e.preventDefault();
-    dropZone.classList.add('dragover');
-  });
-  dropZone.addEventListener('dragleave', e => {
-    e.preventDefault();
-    dropZone.classList.remove('dragover');
-  });
-  dropZone.addEventListener('drop', e => {
-    e.preventDefault();
-    dropZone.classList.remove('dragover');
-    const files = e.dataTransfer.files;
-    if (files.length > 0) handleFileUpload(files[0]);
-  });
-}
-
-function initFileInput() {
-  dom.fileInput?.addEventListener('change', e => {
-    const files = e.target.files;
-    if (files.length > 0) handleFileUpload(files[0]);
-    dom.fileInput.value = '';
-  });
-}
-
-// ============================================================
-// 历史记录管理
-// ============================================================
-
-const loadHistoryDebounced = debounce(loadHistory, 300);
-
-async function loadHistory() {
-  const historyList = dom.historyList;
-  if (!historyList) return;
-
-  const now = Date.now();
-  if (appState.fullHistoryCache.data && (now - appState.fullHistoryCache.timestamp) < CONFIG.HISTORY_CACHE_TTL) {
-    renderHistoryList(appState.fullHistoryCache.data, historyList);
-    return;
-  }
-
-  appState.cancelHistoryRequest();
-  appState.historyAbortCtrl = new AbortController();
-
-  try {
-    const res = await fetch(`${CONFIG.API_BASE}/history?t=${now}`, {
-      cache: "no-store",
-      headers: { "Cache-Control": "no-cache" },
-      signal: appState.historyAbortCtrl.signal
-    });
-    if (!res.ok) {
-      const err = new Error(`HTTP ${res.status}`);
-      err.status = res.status;
-      err.statusText = res.statusText;
-      throw err;
-    }
-    const resp = await res.json();
-    const listData = resp.data ?? [];
-    appState.fullHistoryCache.data = listData;
-    appState.fullHistoryCache.timestamp = now;
-    renderHistoryList(listData, historyList);
-  } catch (err) {
-    if (err.name === 'AbortError') return;
-    handleError(err, '加载历史', false);
-  } finally {
-    appState.historyAbortCtrl = null;
-  }
-}
-
-function renderHistoryList(items, container) {
-  container.innerHTML = '';
-  if (!items || !Array.isArray(items) || items.length === 0) {
-    container.innerHTML = '<li class="history-list__empty">暂无历史记录</li>';
-    return;
-  }
-  const fragment = document.createDocumentFragment();
-  items.forEach(item => {
-    const li = document.createElement('li');
-    li.className = 'history-item';
-
-    const timeSpan = document.createElement('time');
-    timeSpan.className = 'history-item__time';
-    timeSpan.textContent = new Date(item.timestamp * 1000).toLocaleString();
-
-    const textSpan = document.createElement('span');
-    textSpan.className = 'history-item__title';
-    const rawText = item.ocr_text || '';
-    textSpan.textContent = rawText.length > 60 ? rawText.slice(0, 60) + '...' : rawText;
-
-    const btn = document.createElement('button');
-    btn.className = 'history-item__btn';
-    btn.appendChild(timeSpan);
-    btn.appendChild(document.createElement('br'));
-    btn.appendChild(textSpan);
-
-    btn.addEventListener('click', () => {
-      if (!item.image_file_path) {
-        showMessage("该历史无原图地址，无法重新识别", "warning");
-        return;
-      }
-      clearAllPreview();
-      reRecognizeByHistoryImgUrl(item.image_file_path);
-    });
-
-    li.appendChild(btn);
-    fragment.appendChild(li);
-  });
-  container.appendChild(fragment);
-}
-
-// ----- 打开侧边栏时的智能加载（根据搜索框内容）-----
-function initHistoryButton() {
-  dom.historyBtn?.addEventListener('click', function() {
-    const isOpen = dom.historySidebar?.classList.toggle('open');
-    if (isOpen) {
-      const keyword = dom.historyInput?.value || '';
-      if (keyword.trim() === '') {
-        // 空关键词 → 加载全量历史（使用缓存）
-        loadHistory();
-      } else {
-        // 非空 → 执行搜索
-        performSearch(keyword);
-      }
-    }
-  });
-}
-
-// ----- 搜索（直接请求，不缓存）-----
-async function performSearch(keyword) {
-  const trimKey = keyword.trim();
-  if (!trimKey) {
-    // 若关键词为空，则加载全量（并刷新缓存）
-    appState.fullHistoryCache.data = null;
-    appState.fullHistoryCache.timestamp = 0;
-    await loadHistory();
-    return;
-  }
-
-  appState.cancelHistoryRequest();
-  appState.historyAbortCtrl = new AbortController();
-
-  try {
-    const res = await fetch(`${CONFIG.API_BASE}/search`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ keyword: trimKey }),
-      signal: appState.historyAbortCtrl.signal
-    });
-    if (!res.ok) {
-      const err = new Error(`HTTP ${res.status}`);
-      err.status = res.status;
-      err.statusText = res.statusText;
-      throw err;
-    }
-    const resp = await res.json();
-    const listData = resp.data ?? [];
-    // 直接渲染，不更新全量缓存
-    renderHistoryList(listData, dom.historyList);
-    if (listData.length === 0) showMessage("无匹配历史", "info");
-  } catch (err) {
-    if (err.name === 'AbortError') return;
-    handleError(err, '搜索', false);
-  } finally {
-    appState.historyAbortCtrl = null;
-  }
-}
-
-function initSearchButton() {
-  dom.searchBtn?.addEventListener('click', () => performSearch(dom.historyInput?.value || ''));
-  dom.historyInput?.addEventListener('keypress', e => {
-    if (e.key === 'Enter') performSearch(dom.historyInput.value);
-  });
-}
-
-// ============================================================
-// 页面卸载清理
-// ============================================================
-function cleanup() {
-  appState.resetPolling();
-  appState.cancelHistoryRequest();
-}
-
-window.addEventListener('beforeunload', cleanup);
-
-// ============================================================
-// 初始化
-// ============================================================
-document.addEventListener('DOMContentLoaded', function() {
-  initUploadArea();
-  initFileInput();
-  initCopyButton();
-  initSaveButton();
-  initHistoryButton();
-  initSearchButton();
-  initClearPreviewBtn();
-  initClearHistoryBtn();
-  initClearResultBtn();
-  loadHistory();
-});

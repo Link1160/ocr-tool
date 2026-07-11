@@ -1,114 +1,208 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OCR 文字识别工具</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OCR – 在线从图片中提取文字</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="app">
-        <!-- 顶部标题 -->
-        <header class="page-header">
-            <h1 class="page-header__title">
-                <span class="title-sparkle">
-                    <span class="title-text">OCR 文字识别</span>
-                    <div class="sparkle-field">
-                        <span class="sparkle sparkle--1">✦</span>
-                        <span class="sparkle sparkle--2">✦</span>
-                        <span class="sparkle sparkle--3">✦</span>
-                        <span class="sparkle sparkle--4">✦</span>
-                        <span class="sparkle sparkle--5">✦</span>
-                        <span class="sparkle sparkle--6">✦</span>
-                    </div>
+  <div class="app" id="app">
+    <header class="page-header" id="page-header">
+      <h1 class="page-header__title title-sparkle" id="page-title">
+        <span class="sparkle-field" aria-hidden="true">
+          <span class="sparkle sparkle--1">✦</span>
+          <span class="sparkle sparkle--2">✧</span>
+          <span class="sparkle sparkle--3">✦</span>
+          <span class="sparkle sparkle--4">✧</span>
+          <span class="sparkle sparkle--5">✦</span>
+          <span class="sparkle sparkle--6">✧</span>
+        </span>
+        <span class="title-text">OCR – 在线从图片中提取文字</span>
+      </h1>
+      <p class="page-header__subtitle" id="page-subtitle">上传 JPG、PNG、PDF等格式或直接粘贴图片。精确识别，无需注册。</p>
+    </header>
+
+    <div class="layout" id="main-layout">
+      <main class="content" id="main-content">
+        <section class="section" id="upload-section">
+          <!-- 上传模式 -->
+          <div id="upload-mode">
+            <h2 class="text-16 section-title" id="upload-section-title">上传图片</h2>
+            <label class="upload-zone" id="upload-zone" for="file-input">
+              <input
+                type="file"
+                id="file-input"
+                class="file-input"
+                accept="image/*"
+                multiple
+              >
+              <div class="upload-zone__content" id="upload-zone-content">
+                <span class="upload-zone__image-icon" aria-hidden="true">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect width="18" height="18" x="3" y="3"/>
+                    <circle cx="9" cy="9" r="2"/>
+                    <path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>
+                  </svg>
                 </span>
-            </h1>
-            <p class="page-header__subtitle">上传图片一键识别文字，支持历史记录检索、结果导出</p>
-            <span class="status-badge">本地离线识别 · 数据安全</span>
-        </header>
+                <p class="upload-zone__hint" id="upload-hint">拖放图片到此处，或点击上传</p>
+                <p class="upload-zone__subhint" id="upload-subhint">也可以直接粘贴图片，支持 JPG、PNG、PDF 等格式</p>
+                <span class="upload-zone__button">选择图片</span>
+              </div>
+            </label>
+          </div>
 
-        <div class="layout">
-            <!-- 左侧主内容区 -->
-            <main class="content">
-                <!-- 上传区 -->
-                <section id="upload-section" class="section">
-                    <div class="section-header">
-                        <h2 class="section-title">上传图片</h2>
-                    </div>
-                    <div id="dropZone" class="upload-zone">
-                        <input type="file" id="fileInput" class="file-input" accept="image/*">
-                        <div class="upload-zone__content">
-                            <div class="upload-zone__image-icon">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                    <polyline points="17 8 12 3 7 8"></polyline>
-                                    <line x1="12" y1="3" x2="12" y2="15"></line>
-                                </svg>
-                            </div>
-                            <div class="upload-zone__hint">点击或拖拽图片到此处上传</div>
-                            <div class="upload-zone__subhint">支持 JPG / PNG / GIF / WEBP / BMP 格式</div>
-                            <button class="upload-zone__button" type="button">选择图片</button>
-                        </div>
-                    </div>
-                </section>
+          <!-- 预览模式（上传图片后显示） -->
+          <div id="preview-mode" hidden>
+            <div class="section-header">
+              <h2 class="text-16 section-title">图片预览</h2>
+              <div class="preview-tools">
+                <button type="button" class="btn-text" id="btn-add-more">继续添加</button>
+                <button type="button" class="btn-text" id="btn-clear-preview">清空预览</button>
+              </div>
+            </div>
+            <div class="panel" id="preview-area">
+              <div class="preview-workspace" id="preview-workspace">
+                <div class="preview-images" id="preview-images"></div>
+                <div class="preview-thumbs" id="preview-thumbs"></div>
+                <div class="crop-actions">
+                  <button type="button" class="btn btn-primary" id="btn-recognize-all">识别全部图片</button>
+                  <button type="button" class="btn btn-secondary" id="btn-recognize-current">识别当前选中</button>
+                </div>
+              </div>
+            </div>
+          </div>
 
-                <!-- 工作区：预览 + 结果 -->
-                <div class="workspace">
-                    <!-- 预览区 -->
-                    <section id="preview-section" class="section">
-                        <div class="section-header">
-                            <h2 class="section-title">图片预览</h2>
-                            <button id="btn-clear-preview" class="btn-text">清空预览</button>
-                        </div>
-                        <div class="panel">
-                            <div id="preview-empty" class="panel__empty">暂无预览图片</div>
-                            <div id="box-preview-wrap" hidden>
-                                <img id="box-preview-img" alt="文字区域框选图" style="width: 100%; height: auto;">
-                            </div>
-                        </div>
-                    </section>
+          <div class="action-bar" id="action-bar">
+            <button type="button" class="btn btn-primary btn--lg btn-icon" id="btn-start-ocr" aria-label="开始识别" title="开始识别">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M4.5 16.5c-1.5 1.26-2 4-2 4s2.74-.5 4-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09Z"/>
+                <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2Z"/>
+                <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/>
+                <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>
+              </svg>
+            </button>
+            <button type="button" class="btn btn-secondary btn--lg" id="btn-cancel-ocr" disabled>取消</button>
+          </div>
+        </section>
 
-                    <!-- 结果区 -->
-                    <section id="result-section" class="section">
-                        <div class="section-header result-header">
-                            <h2 class="result-title">识别结果</h2>
-                            <button id="btn-clear-result" class="btn-text">清空结果</button>
-                        </div>
-                        <div class="result-area">
-                            <textarea id="resultText" class="result-text" readonly placeholder="识别结果将显示在这里..."></textarea>
-                            <div id="resultActions" class="result-actions" style="display: none;">
-                                <button id="copyBtn" class="btn result-btn result-btn--copy">复制文本</button>
-                                <button id="saveBtn" class="btn result-btn result-btn--download">导出TXT</button>
-                            </div>
-                        </div>
-                    </section>
-                </div>
-            </main>
+        <section class="section history-panel" id="sidebar">
+            <div class="section-header">
+              <h2 class="text-16 section-title sidebar__title" id="sidebar-title">历史记录</h2>
+              <div class="history-tools">
+                <button type="button" class="btn-text" id="btn-toggle-history">收起历史</button>
+                <button type="button" class="btn-text" id="btn-clear-history">清空历史</button>
+              </div>
+            </div>
 
-            <!-- 右侧历史侧边栏 -->
-            <aside class="history-panel" id="historySidebar">
-                <div class="section-header">
-                    <h2 class="sidebar__title">识别历史</h2>
-                    <button id="historyBtn" class="btn btn-secondary btn-sm">展开/收起</button>
+            <div class="history-content">
+              <div class="search-bar" id="history-search-bar">
+                <div class="search-bar__row">
+                  <input
+                    type="text"
+                    class="search-input search-input--date"
+                    id="history-date"
+                    placeholder="选择日期"
+                    readonly
+                  >
+                  <button type="button" class="btn btn-secondary" id="btn-clear-date">清除日期</button>
                 </div>
-                <div class="history-content">
-                    <div class="search-bar">
-                        <input type="text" id="historyInput" class="search-input" placeholder="搜索历史记录...">
-                        <button id="searchBtn" class="btn btn-primary btn-sm">搜索</button>
-                    </div>
-                    <ul id="historyList" class="history-list">
-                        <li class="history-list__empty">暂无历史记录</li>
-                    </ul>
+                <div class="search-bar__row">
+                  <input
+                    type="search"
+                    class="search-input"
+                    id="history-search"
+                    placeholder="关键词搜索"
+                    autocomplete="off"
+                  >
+                  <button type="button" class="btn btn-primary" id="btn-search">搜索</button>
                 </div>
-                <div class="sidebar__footer">
-                    <button id="btn-clear-history" class="btn btn-text">清空全部历史</button>
-                </div>
-            </aside>
-        </div>
+              </div>
+
+              <ul class="history-list" id="history-list">
+                <li class="history-list__empty" id="history-empty">暂无历史记录</li>
+              </ul>
+            </div>
+
+          </section>
+
+      </main>
+
+      <aside class="result-sidebar">
+        <section class="section" id="result-section">
+          <div class="section-header result-header">
+            <h2 class="result-title" id="result-section-title">
+              识别结果
+            </h2>
+            <p class="result-meta" id="result-meta">字数：0</p>
+          </div>
+          <div class="result-area" id="result-area">
+            <textarea
+              class="result-text"
+              id="result-text"
+              placeholder="点击“开始识别”或上传/粘贴图片后，文字结果将在这里显示..."
+              readonly
+            ></textarea>
+            <div class="result-actions" id="result-actions">
+              <button type="button" class="btn result-btn result-btn--copy" id="btn-copy">
+                复制文本
+              </button>
+              <button type="button" class="btn result-btn result-btn--download" id="btn-save-txt">
+                下载为 TXT
+              </button>
+              <button type="button" class="btn result-btn result-btn--clear" id="btn-clear-result">
+                清空
+              </button>
+            </div>
+          </div>
+        </section>
+      </aside>
     </div>
+  </div>
 
-    <!-- 全局消息提示容器 -->
-    <div id="messageContainer"></div>
-    <script src="script.js"></script>
+  <!-- 裁剪弹窗 -->
+  <div class="crop-modal" id="crop-modal" hidden>
+    <div class="crop-modal__overlay"></div>
+    <div class="crop-modal__box">
+      <div class="crop-modal__header">
+        <span class="crop-modal__title">截取图片</span>
+        <span class="crop-modal__counter" id="crop-counter">1 / 1</span>
+      </div>
+      <div class="crop-modal__body" id="crop-modal-body">
+        <canvas id="crop-canvas" class="crop-canvas"></canvas>
+        <div class="zoom-controls" id="zoom-controls">
+          <button type="button" class="zoom-btn" id="btn-zoom-in" title="放大">+</button>
+          <span class="zoom-level" id="zoom-level">100%</span>
+          <button type="button" class="zoom-btn" id="btn-zoom-out" title="缩小">-</button>
+          <button type="button" class="zoom-btn" id="btn-zoom-reset" title="重置">1:1</button>
+        </div>
+      </div>
+      <div class="crop-modal__footer">
+        <p class="crop-modal__tip">拖拽选择截取区域，不选择则使用整张图片。滚轮缩放，Alt+拖拽平移。</p>
+        <div class="crop-modal__actions">
+          <button type="button" class="btn btn-secondary" id="btn-crop-skip">跳过（使用整张）</button>
+          <button type="button" class="btn btn-primary" id="btn-crop-confirm">确认截取</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <template id="preview-item-template">
+    <figure class="preview-item">
+      <img src="" alt="预览图" class="preview-item__img">
+      <figcaption class="preview-item__name"></figcaption>
+    </figure>
+  </template>
+
+  <template id="history-item-template">
+    <li class="history-item">
+      <button type="button" class="history-item__btn">
+        <span class="history-item__title"></span>
+        <time class="history-item__time" datetime=""></time>
+      </button>
+      <button type="button" class="history-item__del" title="删除该条">删除</button>
+    </li>
+  </template>
+  <script src="script.js"></script>
 </body>
 </html>
