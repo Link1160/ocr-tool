@@ -528,6 +528,7 @@ async function recognizeFiles(files, startIndex) {
 
   try {
     const results = [];
+    let totalText = "";
 
     for (let index = 0; index < files.length; index += 1) {
       if (cancelRequested) break;
@@ -538,7 +539,8 @@ async function recognizeFiles(files, startIndex) {
       const taskId = await uploadOne(file);
       const text = await pollResult(taskId);
       results.push(formatImageResult(startIndex + index, file, text));
-      showResult(results.join("\n\n"));
+      if (text) totalText += text;
+      showResult(results.join("\n\n"), totalText);
     }
 
     if (!cancelRequested) {
@@ -631,12 +633,12 @@ function cancelOcr() {
 // ============================================================
 // 结果区
 // ============================================================
-function showResult(text) {
+function showResult(text, countText) {
   const result = $("result-text");
   const meta = $("result-meta");
 
   if (result) result.value = text;
-  if (meta) meta.textContent = `字数：${text.length}`;
+  if (meta) meta.textContent = `字数：${(countText || text).length}`;
 }
 
 function clearPreview() {
