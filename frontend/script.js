@@ -173,15 +173,22 @@ function chooseFiles(files) {
 function switchToPreviewMode() {
   const uploadMode = $("upload-mode");
   const previewMode = $("preview-mode");
+  const section = $("upload-section");
   if (uploadMode) uploadMode.hidden = true;
   if (previewMode) previewMode.hidden = false;
+  if (section) section.classList.add("is-preview");
 }
 
 function switchToUploadMode() {
   const uploadMode = $("upload-mode");
   const previewMode = $("preview-mode");
+  const section = $("upload-section");
   if (uploadMode) uploadMode.hidden = false;
   if (previewMode) previewMode.hidden = true;
+  if (section) section.classList.remove("is-preview", "is-history");
+    // 恢复识别按钮显示
+  const cropActions = document.querySelector(".crop-actions");
+  if (cropActions) cropActions.style.display = "";
 }
 
 function renderThumbs() {
@@ -774,6 +781,13 @@ function showHistoryPreview(item) {
   // 切换到预览模式
   switchToPreviewMode();
 
+  // 标记为历史预览模式（无缩略图，高度小一点）
+  const section = $("upload-section");
+  if (section) {
+    section.classList.remove("is-preview");
+    section.classList.add("is-history");
+  }
+
   // 显示裁剪后的图片（如果有）
   const container = $("preview-images");
   if (container && item.box_img_url) {
@@ -786,11 +800,14 @@ function showHistoryPreview(item) {
   const thumbs = $("preview-thumbs");
   if (thumbs) thumbs.innerHTML = "";
 
+  // 隐藏识别按钮
+  const cropActions = document.querySelector(".crop-actions");
+  if (cropActions) cropActions.style.display = "none";
+
   // 只显示清空预览，隐藏继续添加
   const btnAddMore = $("btn-add-more");
   if (btnAddMore) btnAddMore.hidden = true;
 }
-
 async function searchHistory() {
   const keyword = $("history-search")?.value.trim() || "";
   const date = $("history-date")?.value || "";   // "2026-07-01"

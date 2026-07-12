@@ -1,0 +1,63 @@
+2OCR-在线从图片中提取文字
+曰
+口
+127.0.0.1:5000
+口
+☆
+淘爱淘宝
+AI助手
+学生注册与基本信..
+代码初体验，制作..
+品
+★书签
+■手机书签
+2网址导航
+2京东
+am爱奇艺
+@芒果TV
+）热门游戏
+AAiPPT
+其他书签
+百度
+Q
+☆
+OCR-在线从图片中提取文字
+上传 JPG、PNG、PDF等格式或直接粘贴图片。精确识别，无需注册。
+译
+B
+字数：5758
+图片预览
+继续添加清空预览
+识别结果
+译
+第 1张：crop_1_屏幕截图 2026-07-07 144619.png
+ PCPyCharmMiscProject
+版本控制
+Q
+△
+解锁Pro
+脑
+4.屏幕截图202..
+.屏幕截图202.
+crop_1屏幕
+crop_1_屏幕,
+屏幕截图20
+通知
+ notebook.ipynb
+识别全部图片
+识别当前选中
+运行
+取消
+MAppData\L
+ C:\Users\lenovo\PyCharmMiscProject\1.py:3:
+ DeprecationWarning: The parameter 'use_angle_cls has
+ been deprecated and will be removed in the future.
+I>
+历史记录
+收起历史‧清空历史
+Please
+18:44
+Q搜索
+中》
+X
+2026/7/11
