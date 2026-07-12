@@ -65,24 +65,19 @@
               <div class="preview-workspace" id="preview-workspace">
                 <div class="preview-images" id="preview-images"></div>
                 <div class="preview-thumbs" id="preview-thumbs"></div>
-                <div class="crop-actions">
-                  <button type="button" class="btn btn-primary" id="btn-recognize-all">识别全部图片</button>
-                  <button type="button" class="btn btn-secondary" id="btn-recognize-current">识别当前选中</button>
-                </div>
               </div>
             </div>
-          </div>
-
-          <div class="action-bar" id="action-bar">
-            <button type="button" class="btn btn-primary btn--lg btn-icon" id="btn-start-ocr" aria-label="开始识别" title="开始识别">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M4.5 16.5c-1.5 1.26-2 4-2 4s2.74-.5 4-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09Z"/>
-                <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2Z"/>
-                <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/>
-                <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>
-              </svg>
-            </button>
-            <button type="button" class="btn btn-secondary btn--lg" id="btn-cancel-ocr" disabled>取消</button>
+            <div class="crop-actions">
+              <button type="button" class="btn btn-primary btn-icon" id="btn-recognize-all" aria-label="识别全部图片" title="识别全部图片">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M4.5 16.5c-1.5 1.26-2 4-2 4s2.74-.5 4-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09Z"/>
+                  <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2Z"/>
+                  <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/>
+                  <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>
+                </svg>
+              </button>
+              <button type="button" class="btn btn-secondary" id="btn-recognize-current">识别当前选中</button>
+            </div>
           </div>
         </section>
 

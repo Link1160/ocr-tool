@@ -72,8 +72,6 @@ function bindUpload() {
 // 按钮绑定
 // ============================================================
 function bindButtons() {
-  $("btn-start-ocr")?.addEventListener("click", startOcr);
-  $("btn-cancel-ocr")?.addEventListener("click", cancelOcr);
   $("btn-clear-preview")?.addEventListener("click", clearPreview);
   $("btn-add-more")?.addEventListener("click", () => {
     const tempInput = document.createElement("input");
@@ -538,8 +536,8 @@ async function recognizeFiles(files, startIndex) {
 
       const taskId = await uploadOne(file);
       const text = await pollResult(taskId);
-      results.push(formatImageResult(startIndex + index, file, text));
-      if (text) totalText += text;
+      results.push(formatImageResult(startIndex + index, file, text, files.length));
+      if (text) totalText += text.replace(/\s+/g, "");
       showResult(results.join("\n\n"), totalText);
     }
 
@@ -554,7 +552,10 @@ async function recognizeFiles(files, startIndex) {
   }
 }
 
-function formatImageResult(index, file, text) {
+function formatImageResult(index, file, text, totalCount) {
+  if (totalCount <= 1) {
+    return text || "未识别到文字";
+  }
   const title = `第 ${index + 1} 张：${file.name}`;
   const line = "=".repeat(title.length);
   return `${line}\n${title}\n${line}\n${text || "未识别到文字"}`;
@@ -638,11 +639,16 @@ function showResult(text, countText) {
   const meta = $("result-meta");
 
   if (result) result.value = text;
-  if (meta) meta.textContent = `字数：${(countText || text).length}`;
+  if (meta) {
+    const countSrc = countText || text;
+    const cleanText = countSrc.replace(/\s+/g, "");
+    meta.textContent = `字数：${cleanText.length}`;
+  }
 }
 
 function clearPreview() {
   selectedFiles = [];
+  croppedFiles = [];
   currentFileIndex = 0;
   currentImage = null;
   cropBox = null;
@@ -650,6 +656,10 @@ function clearPreview() {
   cropStart = null;
 
   switchToUploadMode();
+
+  // 恢复"继续添加"按钮显示
+  const btnAddMore = $("btn-add-more");
+  if (btnAddMore) btnAddMore.hidden = false;
 
   const thumbs = $("preview-thumbs");
   const canvas = $("crop-canvas");
@@ -728,9 +738,10 @@ function renderHistory(items) {
     row.querySelector(".history-item__title").textContent =
       text.length > 60 ? `${text.slice(0, 60)}...` : text;
     row.querySelector(".history-item__time").textContent = formatTime(item.timestamp);
-    row.querySelector(".history-item__btn").addEventListener("click", () => {
-      showResult(item.ocr_text || "");
-    });
+row.querySelector(".history-item__btn").addEventListener("click", () => {
+  showResult(item.ocr_text || "");
+  showHistoryPreview(item);
+});
 
     // 单条删除
     row.querySelector(".history-item__del").addEventListener("click", async (e) => {
@@ -752,6 +763,32 @@ function renderHistory(items) {
 
     list.appendChild(row);
   });
+}
+
+function showHistoryPreview(item) {
+  // 清空当前预览状态
+  croppedFiles = [];
+  selectedFiles = [];
+  currentFileIndex = 0;
+
+  // 切换到预览模式
+  switchToPreviewMode();
+
+  // 显示裁剪后的图片（如果有）
+  const container = $("preview-images");
+  if (container && item.box_img_url) {
+    container.innerHTML = `<img src="${API_BASE}${item.box_img_url}" alt="历史图片">`;
+  } else if (container && item.image_file_path) {
+    container.innerHTML = `<img src="${API_BASE}${item.image_file_path}" alt="历史图片">`;
+  }
+
+  // 清空缩略图区域
+  const thumbs = $("preview-thumbs");
+  if (thumbs) thumbs.innerHTML = "";
+
+  // 只显示清空预览，隐藏继续添加
+  const btnAddMore = $("btn-add-more");
+  if (btnAddMore) btnAddMore.hidden = true;
 }
 
 async function searchHistory() {
@@ -796,10 +833,10 @@ async function clearHistory() {
 // 工具函数
 // ============================================================
 function setLoading(loading) {
-  const start = $("btn-start-ocr");
-  const cancel = $("btn-cancel-ocr");
-  if (start) start.disabled = loading;
-  if (cancel) cancel.disabled = !loading;
+  const recognizeAll = $("btn-recognize-all");
+  const recognizeCurrent = $("btn-recognize-current");
+  if (recognizeAll) recognizeAll.disabled = loading;
+  if (recognizeCurrent) recognizeCurrent.disabled = loading;
 }
 
 function formatTime(value) {
