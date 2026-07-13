@@ -211,7 +211,10 @@ button {
 
 .upload-zone:hover,
 .upload-zone:focus-within,
-.upload-zone.drag-over {
+.upload-zone.drag-over,
+.panel:hover,
+.history-content:hover,
+.result-text:hover {
   border-color: var(--black);
   background: #f7f9fc;
 }

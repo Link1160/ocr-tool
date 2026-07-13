@@ -66,6 +66,23 @@ function bindUpload() {
   document.addEventListener("paste", (event) => {
     chooseFiles([...event.clipboardData.files]);
   });
+
+  // 预览模式下也支持拖拽添加图片
+  const panel = $("preview-area");
+  if (panel) {
+    panel.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      panel.classList.add("drag-over");
+    });
+
+    panel.addEventListener("dragleave", () => panel.classList.remove("drag-over"));
+
+    panel.addEventListener("drop", (event) => {
+      event.preventDefault();
+      panel.classList.remove("drag-over");
+      chooseFiles([...event.dataTransfer.files]);
+    });
+  }
 }
 
 // ============================================================
@@ -219,6 +236,16 @@ function showPreviewImage(index) {
   container.innerHTML = `<img src="${URL.createObjectURL(croppedFiles[index])}" alt="预览">`;
 }
 
+function applyTransform() {
+  const canvas = $("crop-canvas");
+  if (!canvas) return;
+  canvas.style.transform = `translate(${panX}px, ${panY}px)`;
+  canvas.style.transformOrigin = "0 0";
+
+  const label = $("zoom-level");
+  if (label) label.textContent = Math.round(zoomScale * 100) + "%";
+}
+
 function loadImageToCanvas(index) {
   const file = cropQueue[index];
   const canvas = $("crop-canvas");
@@ -235,21 +262,15 @@ function loadImageToCanvas(index) {
     panX = 0;
     panY = 0;
 
-    canvas.width = Math.max(1, Math.round(image.width * baseScale));
-    canvas.height = Math.max(1, Math.round(image.height * baseScale));
+    // canvas 用原图分辨率，CSS 控制显示大小
+    canvas.width = image.width;
+    canvas.height = image.height;
+    canvas.style.width = Math.round(image.width * baseScale) + "px";
+    canvas.style.height = Math.round(image.height * baseScale) + "px";
     applyTransform();
     drawCropCanvas();
   };
   image.src = URL.createObjectURL(file);
-}
-
-function applyTransform() {
-  const canvas = $("crop-canvas");
-  if (!canvas) return;
-  canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomScale})`;
-
-  const label = $("zoom-level");
-  if (label) label.textContent = Math.round(zoomScale * 100) + "%";
 }
 
 // ============================================================
@@ -316,20 +337,18 @@ function bindCropTools() {
   // ---- 滚轮缩放 ----
   body.addEventListener("wheel", (event) => {
     event.preventDefault();
-    const rect = body.getBoundingClientRect();
-    const mouseX = event.clientX - rect.left;
-    const mouseY = event.clientY - rect.top;
+    const delta = event.deltaY > 0 ? 0.92 : 1.08;
+    const newScale = Math.max(0.3, Math.min(5, zoomScale * delta));
 
-    const oldScale = zoomScale;
-    const delta = event.deltaY > 0 ? 0.9 : 1.1;
-    zoomScale = Math.max(0.5, Math.min(10, zoomScale * delta));
-
-    // 以鼠标位置为中心缩放
-    panX = mouseX - (mouseX - panX) * (zoomScale / oldScale);
-    panY = mouseY - (mouseY - panY) * (zoomScale / oldScale);
-
-    applyTransform();
-    drawCropCanvas();
+    if (newScale !== zoomScale) {
+      zoomScale = newScale;
+      if (currentImage) {
+        canvas.style.width = Math.round(currentImage.width * baseScale * zoomScale) + "px";
+        canvas.style.height = Math.round(currentImage.height * baseScale * zoomScale) + "px";
+      }
+      const label = $("zoom-level");
+      if (label) label.textContent = Math.round(zoomScale * 100) + "%";
+    }
   }, { passive: false });
 
   // ---- 缩放按钮 ----
@@ -339,26 +358,26 @@ function bindCropTools() {
     zoomScale = 1;
     panX = 0;
     panY = 0;
+    if (currentImage && canvas) {
+      canvas.style.width = Math.round(currentImage.width * baseScale) + "px";
+      canvas.style.height = Math.round(currentImage.height * baseScale) + "px";
+    }
     applyTransform();
-    drawCropCanvas();
   });
 }
 
 function zoomBy(factor) {
-  const body = $("crop-modal-body");
-  if (!body) return;
-  const rect = body.getBoundingClientRect();
-  const centerX = rect.width / 2;
-  const centerY = rect.height / 2;
-
-  const oldScale = zoomScale;
-  zoomScale = Math.max(0.5, Math.min(10, zoomScale * factor));
-
-  panX = centerX - (centerX - panX) * (zoomScale / oldScale);
-  panY = centerY - (centerY - panY) * (zoomScale / oldScale);
-
-  applyTransform();
-  drawCropCanvas();
+  const canvas = $("crop-canvas");
+  const newScale = Math.max(0.3, Math.min(5, zoomScale * factor));
+  if (newScale !== zoomScale) {
+    zoomScale = newScale;
+    if (currentImage && canvas) {
+      canvas.style.width = Math.round(currentImage.width * baseScale * zoomScale) + "px";
+      canvas.style.height = Math.round(currentImage.height * baseScale * zoomScale) + "px";
+    }
+    const label = $("zoom-level");
+    if (label) label.textContent = Math.round(zoomScale * 100) + "%";
+  }
 }
 
 function getCanvasPoint(event) {
@@ -379,23 +398,20 @@ function drawCropCanvas() {
 
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(currentImage, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(currentImage, 0, 0);
 
   if (!cropBox) return;
 
   ctx.save();
-  // 遮罩外围：先画半透明黑色覆盖全图，再用 clip 恢复截取区域的原图
   ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  // 清除截取区域的遮罩，重新绘制原图内容
   ctx.save();
   ctx.beginPath();
   ctx.rect(cropBox.x, cropBox.y, cropBox.w, cropBox.h);
   ctx.clip();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(currentImage, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(currentImage, 0, 0);
   ctx.restore();
-  // 画截取框边框
   ctx.strokeStyle = "#1677ff";
   ctx.lineWidth = 2;
   ctx.strokeRect(cropBox.x, cropBox.y, cropBox.w, cropBox.h);
@@ -407,7 +423,6 @@ function drawCropCanvas() {
 // ============================================================
 function bindCropModal() {
   $("btn-crop-confirm")?.addEventListener("click", confirmCrop);
-  $("btn-crop-skip")?.addEventListener("click", skipCrop);
 }
 
 function openCropModal() {
@@ -454,12 +469,6 @@ async function confirmCrop() {
     showMessage(`截取失败：${error.message}`, "error");
     croppedFiles.push(cropQueue[cropIndex]);
   }
-  cropIndex++;
-  loadCropImage();
-}
-
-function skipCrop() {
-  croppedFiles.push(cropQueue[cropIndex]);
   cropIndex++;
   loadCropImage();
 }
@@ -668,9 +677,15 @@ function clearPreview() {
   const btnAddMore = $("btn-add-more");
   if (btnAddMore) btnAddMore.hidden = false;
 
+  // 恢复识别按钮显示
+  const cropActions = document.querySelector(".crop-actions");
+  if (cropActions) cropActions.style.display = "";
+
   const thumbs = $("preview-thumbs");
+  const images = $("preview-images");
   const canvas = $("crop-canvas");
   if (thumbs) thumbs.innerHTML = "";
+  if (images) images.innerHTML = "";
   if (canvas) {
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -781,24 +796,26 @@ function showHistoryPreview(item) {
   // 切换到预览模式
   switchToPreviewMode();
 
-  // 标记为历史预览模式（无缩略图，高度小一点）
+  // 标记为历史预览模式
   const section = $("upload-section");
   if (section) {
     section.classList.remove("is-preview");
     section.classList.add("is-history");
   }
 
-  // 显示裁剪后的图片（如果有）
+  // 清空缩略图区域
+  const thumbs = $("preview-thumbs");
+  if (thumbs) thumbs.innerHTML = "";
+
+  // 显示裁剪后的图片
   const container = $("preview-images");
   if (container && item.box_img_url) {
     container.innerHTML = `<img src="${API_BASE}${item.box_img_url}" alt="历史图片">`;
   } else if (container && item.image_file_path) {
     container.innerHTML = `<img src="${API_BASE}${item.image_file_path}" alt="历史图片">`;
+  } else {
+    container.innerHTML = "";
   }
-
-  // 清空缩略图区域
-  const thumbs = $("preview-thumbs");
-  if (thumbs) thumbs.innerHTML = "";
 
   // 隐藏识别按钮
   const cropActions = document.querySelector(".crop-actions");
