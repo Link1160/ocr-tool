@@ -5,29 +5,30 @@ let timer = null;
 let selectedFiles = [];
 let cancelRequested = false;
 
-// 裁剪状态
+// ========== 裁剪相关状态 ==========
 let currentFileIndex = 0;
 let currentImage = null;
 let cropBox = null;
 let isCropping = false;
 let cropStart = null;
 
-// 缩放 & 平移状态
+// ========== 缩放与平移状态 ==========
 let zoomScale = 1;
 let panX = 0;
 let panY = 0;
 let isPanning = false;
 let panStartX = 0;
 let panStartY = 0;
-let baseScale = 1; // 图片适配容器的初始缩放比
+let baseScale = 1;
 
-// 裁剪弹窗队列
-let cropQueue = [];       // 待裁剪的原始 File[]
-let cropIndex = 0;        // 当前裁剪第几张
-let croppedFiles = [];    // 裁剪后的文件列表（File 对象）
+// ========== 裁剪队列管理 ==========
+let cropQueue = [];
+let cropIndex = 0;
+let croppedFiles = [];
 
 const $ = (id) => document.getElementById(id);
 
+// ========== 页面初始化 ==========
 document.addEventListener("DOMContentLoaded", () => {
   bindUpload();
   bindButtons();
@@ -37,7 +38,7 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // ============================================================
-// 上传绑定
+// 上传区域交互
 // ============================================================
 function bindUpload() {
   const zone = $("upload-zone");
@@ -67,7 +68,7 @@ function bindUpload() {
     chooseFiles([...event.clipboardData.files]);
   });
 
-  // 预览模式下也支持拖拽添加图片
+  // 预览区也支持拖拽添加
   const panel = $("preview-area");
   if (panel) {
     panel.addEventListener("dragover", (event) => {
@@ -86,7 +87,7 @@ function bindUpload() {
 }
 
 // ============================================================
-// 按钮绑定
+// 主要按钮事件绑定
 // ============================================================
 function bindButtons() {
   $("btn-clear-preview")?.addEventListener("click", clearPreview);
@@ -105,7 +106,7 @@ function bindButtons() {
   $("btn-save-txt")?.addEventListener("click", downloadText);
   $("btn-clear-history")?.addEventListener("click", clearHistory);
   $("btn-toggle-history")?.addEventListener("click", toggleHistory);
-let searchTimer = null;
+  let searchTimer = null;
 
   $("btn-search")?.addEventListener("click", () => {
     clearTimeout(searchTimer);
@@ -121,7 +122,8 @@ let searchTimer = null;
     clearTimeout(searchTimer);
     searchTimer = setTimeout(searchHistory, 300);
   });
-  // 点击日期文本框时动态创建原生 date 输入框来弹出选择器
+
+  // 点击日期文本框时弹出原生日期选择器
   $("history-date")?.addEventListener("click", () => {
     const temp = document.createElement("input");
     temp.type = "date";
@@ -136,7 +138,6 @@ let searchTimer = null;
       document.body.removeChild(temp);
     });
 
-    // 如果用户取消选择（失焦且无值），清理临时元素
     temp.addEventListener("blur", () => {
       setTimeout(() => {
         if (temp.parentNode) document.body.removeChild(temp);
@@ -150,16 +151,17 @@ let searchTimer = null;
     }
   });
 
-  // 清除日期
   $("btn-clear-date")?.addEventListener("click", () => {
     const display = $("history-date");
     if (display) display.value = "";
     searchHistory();
   });
+
   $("btn-recognize-all")?.addEventListener("click", recognizeAll);
   $("btn-recognize-current")?.addEventListener("click", recognizeCurrent);
 }
 
+// 折叠/展开历史侧边栏
 function toggleHistory() {
   const panel = $("sidebar");
   const button = $("btn-toggle-history");
@@ -170,7 +172,7 @@ function toggleHistory() {
 }
 
 // ============================================================
-// 文件选择 → 裁剪弹窗 → 预览
+// 文件选择 → 进入裁剪流程
 // ============================================================
 function chooseFiles(files) {
   const images = files.filter((file) => file.type.startsWith("image/"));
@@ -182,11 +184,11 @@ function chooseFiles(files) {
 
   cropQueue = images;
   cropIndex = 0;
-  // 追加模式下保留已有图片，首次上传时清空
   if (!croppedFiles.length) croppedFiles = [];
   openCropModal();
 }
 
+// 切换到预览模式（显示缩略图和大图）
 function switchToPreviewMode() {
   const uploadMode = $("upload-mode");
   const previewMode = $("preview-mode");
@@ -196,6 +198,7 @@ function switchToPreviewMode() {
   if (section) section.classList.add("is-preview");
 }
 
+// 切换回上传模式
 function switchToUploadMode() {
   const uploadMode = $("upload-mode");
   const previewMode = $("preview-mode");
@@ -203,11 +206,11 @@ function switchToUploadMode() {
   if (uploadMode) uploadMode.hidden = false;
   if (previewMode) previewMode.hidden = true;
   if (section) section.classList.remove("is-preview", "is-history");
-    // 恢复识别按钮显示
   const cropActions = document.querySelector(".crop-actions");
   if (cropActions) cropActions.style.display = "";
 }
 
+// 渲染缩略图列表
 function renderThumbs() {
   const container = $("preview-thumbs");
   if (!container) return;
@@ -230,12 +233,14 @@ function renderThumbs() {
   });
 }
 
+// 显示当前选中的大图
 function showPreviewImage(index) {
   const container = $("preview-images");
   if (!container || !croppedFiles[index]) return;
   container.innerHTML = `<img src="${URL.createObjectURL(croppedFiles[index])}" alt="预览">`;
 }
 
+// 应用平移和缩放变换
 function applyTransform() {
   const canvas = $("crop-canvas");
   if (!canvas) return;
@@ -246,6 +251,7 @@ function applyTransform() {
   if (label) label.textContent = Math.round(zoomScale * 100) + "%";
 }
 
+// 将指定索引的图片加载到裁剪画布
 function loadImageToCanvas(index) {
   const file = cropQueue[index];
   const canvas = $("crop-canvas");
@@ -262,7 +268,6 @@ function loadImageToCanvas(index) {
     panX = 0;
     panY = 0;
 
-    // canvas 用原图分辨率，CSS 控制显示大小
     canvas.width = image.width;
     canvas.height = image.height;
     canvas.style.width = Math.round(image.width * baseScale) + "px";
@@ -274,17 +279,16 @@ function loadImageToCanvas(index) {
 }
 
 // ============================================================
-// 裁剪工具
+// 裁剪交互（鼠标拖拽框选、平移、滚轮缩放）
 // ============================================================
 function bindCropTools() {
   const canvas = $("crop-canvas");
   const body = $("crop-modal-body");
   if (!canvas || !body) return;
 
-  // ---- 鼠标按下 ----
+  // 鼠标按下：中键或 Alt+左键 → 平移；左键 → 开始框选
   canvas.addEventListener("mousedown", (event) => {
     if (event.button === 1 || (event.button === 0 && event.altKey)) {
-      // 中键 或 Alt+左键 → 平移
       isPanning = true;
       panStartX = event.clientX - panX;
       panStartY = event.clientY - panY;
@@ -293,7 +297,6 @@ function bindCropTools() {
       return;
     }
     if (event.button === 0 && currentImage) {
-      // 左键 → 截取
       isCropping = true;
       cropStart = getCanvasPoint(event);
       cropBox = { x: cropStart.x, y: cropStart.y, w: 0, h: 0 };
@@ -301,7 +304,7 @@ function bindCropTools() {
     }
   });
 
-  // ---- 鼠标移动 ----
+  // 鼠标移动：更新平移或裁剪框
   canvas.addEventListener("mousemove", (event) => {
     if (isPanning) {
       panX = event.clientX - panStartX;
@@ -320,7 +323,7 @@ function bindCropTools() {
     drawCropCanvas();
   });
 
-  // ---- 鼠标松开 ----
+  // 鼠标松开：结束平移或裁剪
   document.addEventListener("mouseup", () => {
     if (isPanning) {
       isPanning = false;
@@ -334,7 +337,7 @@ function bindCropTools() {
     drawCropCanvas();
   });
 
-  // ---- 滚轮缩放 ----
+  // 滚轮缩放（在裁剪弹窗内）
   body.addEventListener("wheel", (event) => {
     event.preventDefault();
     const delta = event.deltaY > 0 ? 0.92 : 1.08;
@@ -351,7 +354,7 @@ function bindCropTools() {
     }
   }, { passive: false });
 
-  // ---- 缩放按钮 ----
+  // 缩放按钮
   $("btn-zoom-in")?.addEventListener("click", () => zoomBy(1.25));
   $("btn-zoom-out")?.addEventListener("click", () => zoomBy(0.8));
   $("btn-zoom-reset")?.addEventListener("click", () => {
@@ -366,6 +369,7 @@ function bindCropTools() {
   });
 }
 
+// 按倍数缩放
 function zoomBy(factor) {
   const canvas = $("crop-canvas");
   const newScale = Math.max(0.3, Math.min(5, zoomScale * factor));
@@ -380,10 +384,10 @@ function zoomBy(factor) {
   }
 }
 
+// 获取鼠标在画布上的实际坐标（考虑 CSS 缩放）
 function getCanvasPoint(event) {
   const canvas = $("crop-canvas");
   const rect = canvas.getBoundingClientRect();
-  // getBoundingClientRect 已包含 CSS transform，所以直接用
   const scaleX = canvas.width / rect.width;
   const scaleY = canvas.height / rect.height;
   return {
@@ -392,6 +396,7 @@ function getCanvasPoint(event) {
   };
 }
 
+// 绘制裁剪画布（背景图 + 半透明遮罩 + 裁剪框）
 function drawCropCanvas() {
   const canvas = $("crop-canvas");
   if (!canvas || !currentImage) return;
@@ -419,12 +424,13 @@ function drawCropCanvas() {
 }
 
 // ============================================================
-// 裁剪弹窗
+// 裁剪弹窗控制
 // ============================================================
 function bindCropModal() {
   $("btn-crop-confirm")?.addEventListener("click", confirmCrop);
 }
 
+// 打开裁剪弹窗并加载第一张
 function openCropModal() {
   cropIndex = 0;
   cropBox = null;
@@ -433,11 +439,13 @@ function openCropModal() {
   loadCropImage();
 }
 
+// 关闭裁剪弹窗
 function closeCropModal() {
   const modal = $("crop-modal");
   if (modal) modal.hidden = true;
 }
 
+// 加载当前索引的图片到裁剪界面
 function loadCropImage() {
   if (cropIndex >= cropQueue.length) {
     // 所有图片处理完毕，进入预览
@@ -457,6 +465,7 @@ function loadCropImage() {
   loadImageToCanvas(cropIndex);
 }
 
+// 确认裁剪：生成裁剪后的图片并加入结果列表，然后加载下一张
 async function confirmCrop() {
   try {
     if (cropBox && (cropBox.w >= 10 && cropBox.h >= 10)) {
@@ -473,6 +482,7 @@ async function confirmCrop() {
   loadCropImage();
 }
 
+// 根据当前裁剪框生成裁剪后的 File 对象
 function getCropFile() {
   return new Promise((resolve, reject) => {
     const source = cropQueue[cropIndex];
@@ -508,8 +518,9 @@ function getCropFile() {
 }
 
 // ============================================================
-// 识别
+// OCR 识别核心逻辑
 // ============================================================
+// 识别全部图片
 async function recognizeAll() {
   if (!selectedFiles.length) {
     showMessage("请先选择图片", "warning");
@@ -518,6 +529,7 @@ async function recognizeAll() {
   await recognizeFiles(selectedFiles, 0);
 }
 
+// 识别当前选中的单张图片
 async function recognizeCurrent() {
   const file = selectedFiles[currentFileIndex];
   if (!file) {
@@ -527,6 +539,7 @@ async function recognizeCurrent() {
   await recognizeFiles([file], currentFileIndex);
 }
 
+// 启动 OCR（对外接口）
 async function startOcr() {
   if (!selectedFiles.length) {
     showMessage("请先选择或粘贴图片", "warning");
@@ -535,6 +548,7 @@ async function startOcr() {
   await recognizeFiles(selectedFiles, 0);
 }
 
+// 批量识别指定文件列表，从 startIndex 开始编号
 async function recognizeFiles(files, startIndex) {
   setLoading(true);
   cancelRequested = false;
@@ -583,6 +597,7 @@ async function recognizeFiles(files, startIndex) {
   }
 }
 
+// 格式化单张图片识别结果（添加标题和分隔线）
 function formatImageResult(index, file, text, totalCount) {
   const emptyHint = "未识别到文字，可能原因：\n• 图片中没有文字\n• 图片模糊或文字过小\n• 图片格式不支持";
   const failedHint = "识别失败，请检查图片是否正常";
@@ -596,6 +611,7 @@ function formatImageResult(index, file, text, totalCount) {
   return `${line}\n${title}\n${line}\n${displayText}`;
 }
 
+// 上传单张图片到后端，返回任务 ID
 async function uploadOne(file) {
   const data = new FormData();
   data.append("image", file);
@@ -612,6 +628,7 @@ async function uploadOne(file) {
   return currentTaskId;
 }
 
+// 轮询任务状态直到完成或超时
 function pollResult(taskId) {
   if (!taskId) return Promise.reject(new Error("任务 ID 为空"));
   if (timer) clearInterval(timer);
@@ -660,6 +677,7 @@ function pollResult(taskId) {
   });
 }
 
+// 取消当前识别任务
 function cancelOcr() {
   cancelRequested = true;
   if (timer) clearInterval(timer);
@@ -668,8 +686,9 @@ function cancelOcr() {
 }
 
 // ============================================================
-// 结果区
+// 结果展示与操作
 // ============================================================
+// 更新结果文本框和字数统计
 function showResult(text, countText) {
   const result = $("result-text");
   const meta = $("result-meta");
@@ -682,6 +701,7 @@ function showResult(text, countText) {
   }
 }
 
+// 清空预览区（恢复上传模式）
 function clearPreview() {
   selectedFiles = [];
   croppedFiles = [];
@@ -693,11 +713,9 @@ function clearPreview() {
 
   switchToUploadMode();
 
-  // 恢复"继续添加"按钮显示
   const btnAddMore = $("btn-add-more");
   if (btnAddMore) btnAddMore.hidden = false;
 
-  // 恢复识别按钮显示
   const cropActions = document.querySelector(".crop-actions");
   if (cropActions) cropActions.style.display = "";
 
@@ -712,11 +730,13 @@ function clearPreview() {
   }
 }
 
+// 清空结果区域
 function clearResult() {
   currentTaskId = "";
   showResult("");
 }
 
+// 复制结果到剪贴板
 async function copyText() {
   const text = $("result-text")?.value || "";
   if (!text) {
@@ -728,6 +748,7 @@ async function copyText() {
   showMessage("复制成功", "success");
 }
 
+// 下载结果为 .txt 文件
 function downloadText() {
   const text = $("result-text")?.value || "";
   if (!text) {
@@ -746,8 +767,9 @@ function downloadText() {
 }
 
 // ============================================================
-// 历史记录
+// 历史记录管理
 // ============================================================
+// 加载历史列表
 async function loadHistory(silent = false) {
   const list = $("history-list");
   if (!list) return;
@@ -762,6 +784,7 @@ async function loadHistory(silent = false) {
   }
 }
 
+// 渲染历史列表
 function renderHistory(items) {
   const list = $("history-list");
   const template = $("history-item-template");
@@ -780,10 +803,10 @@ function renderHistory(items) {
     row.querySelector(".history-item__title").textContent =
       text.length > 60 ? `${text.slice(0, 60)}...` : text;
     row.querySelector(".history-item__time").textContent = formatTime(item.timestamp);
-row.querySelector(".history-item__btn").addEventListener("click", () => {
-  showResult(item.ocr_text || "");
-  showHistoryPreview(item);
-});
+    row.querySelector(".history-item__btn").addEventListener("click", () => {
+      showResult(item.ocr_text || "");
+      showHistoryPreview(item);
+    });
 
     // 单条删除
     row.querySelector(".history-item__del").addEventListener("click", async (e) => {
@@ -807,27 +830,23 @@ row.querySelector(".history-item__btn").addEventListener("click", () => {
   });
 }
 
+// 点击历史条目时在预览区显示对应的图片
 function showHistoryPreview(item) {
-  // 清空当前预览状态
   croppedFiles = [];
   selectedFiles = [];
   currentFileIndex = 0;
 
-  // 切换到预览模式
   switchToPreviewMode();
 
-  // 标记为历史预览模式
   const section = $("upload-section");
   if (section) {
     section.classList.remove("is-preview");
     section.classList.add("is-history");
   }
 
-  // 清空缩略图区域
   const thumbs = $("preview-thumbs");
   if (thumbs) thumbs.innerHTML = "";
 
-  // 显示裁剪后的图片
   const container = $("preview-images");
   if (container && item.box_img_url) {
     container.innerHTML = `<img src="${API_BASE}${item.box_img_url}" alt="历史图片">`;
@@ -837,22 +856,21 @@ function showHistoryPreview(item) {
     container.innerHTML = "";
   }
 
-  // 隐藏识别按钮
   const cropActions = document.querySelector(".crop-actions");
   if (cropActions) cropActions.style.display = "none";
 
-  // 只显示清空预览，隐藏继续添加
   const btnAddMore = $("btn-add-more");
   if (btnAddMore) btnAddMore.hidden = true;
 }
+
+// 搜索历史（按关键词和日期）
 async function searchHistory() {
   const keyword = $("history-search")?.value.trim() || "";
-  const date = $("history-date")?.value || "";   // "2026-07-01"
+  const date = $("history-date")?.value || "";
 
   const body = { keyword };
   if (date) body.date = date;
 
-  // 无筛选条件时加载全部
   if (!keyword && !date) {
     loadHistory(true);
     return;
@@ -871,6 +889,7 @@ async function searchHistory() {
   }
 }
 
+// 清空所有历史记录
 async function clearHistory() {
   if (!confirm("确定清空所有历史记录？")) return;
 
@@ -884,8 +903,9 @@ async function clearHistory() {
 }
 
 // ============================================================
-// 工具函数
+// 通用工具函数
 // ============================================================
+// 设置加载状态（禁用识别按钮）
 function setLoading(loading) {
   const recognizeAll = $("btn-recognize-all");
   const recognizeCurrent = $("btn-recognize-current");
@@ -893,13 +913,14 @@ function setLoading(loading) {
   if (recognizeCurrent) recognizeCurrent.disabled = loading;
 }
 
+// 格式化时间戳（秒 → 本地时间字符串）
 function formatTime(value) {
   if (!value) return "";
-  // 后端 timestamp 是秒级（time.time()），统一乘 1000 转毫秒
   const time = value * 1000;
   return new Date(time).toLocaleString();
 }
 
+// 显示临时消息（自动消失）
 function showMessage(text, type = "info") {
   let box = $("message-container");
   if (!box) {
