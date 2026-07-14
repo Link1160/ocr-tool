@@ -540,41 +540,60 @@ async function recognizeFiles(files, startIndex) {
   cancelRequested = false;
   showResult("");
 
-  try {
-    const results = [];
-    let totalText = "";
+  const results = [];
+  const failedList = [];
+  let totalText = "";
 
+  try {
     for (let index = 0; index < files.length; index += 1) {
       if (cancelRequested) break;
 
       const file = files[index];
       showMessage(`正在识别第 ${index + 1}/${files.length} 张`, "info");
 
-      const taskId = await uploadOne(file);
-      const text = await pollResult(taskId);
-      results.push(formatImageResult(startIndex + index, file, text, files.length));
-      if (text) totalText += text.replace(/\s+/g, "");
-      showResult(results.join("\n\n"), totalText);
+      try {
+        const taskId = await uploadOne(file);
+        const text = await pollResult(taskId);
+        results.push(formatImageResult(startIndex + index, file, text, files.length));
+        if (text) totalText += text.replace(/\s+/g, "");
+        showResult(results.join("\n\n"), totalText);
+      } catch (err) {
+        failedList.push({ name: file.name, error: err.message });
+        results.push(formatImageResult(startIndex + index, file, null, files.length));
+        showResult(results.join("\n\n"), totalText);
+      }
     }
 
     if (!cancelRequested) {
       loadHistory(true);
-      showMessage("全部图片识别完成", "success");
+      if (failedList.length === 0) {
+        showMessage("全部图片识别完成", "success");
+      } else {
+        const failedNames = failedList.map(f => f.name).join("、");
+        showMessage(`识别完成，${failedList.length} 张失败：${failedNames}`, "warning");
+      }
     }
   } catch (error) {
-    showMessage(`识别失败：${error.message}`, "error");
+    const friendlyMsg = error.message.includes("取消") 
+      ? "识别已取消" 
+      : "识别过程出错，请稍后重试";
+    showMessage(friendlyMsg, "error");
   } finally {
     setLoading(false);
   }
 }
 
 function formatImageResult(index, file, text, totalCount) {
+  const emptyHint = "未识别到文字，可能原因：\n• 图片中没有文字\n• 图片模糊或文字过小\n• 图片格式不支持";
+  const failedHint = "识别失败，请检查图片是否正常";
+  const displayText = text === null ? failedHint : (text || emptyHint);
+  
   if (totalCount <= 1) {
-    return text || "未识别到文字";
+    return displayText;
   }
   const title = `第 ${index + 1} 张：${file.name}`;
   const line = "=".repeat(title.length);
-  return `${line}\n${title}\n${line}\n${text || "未识别到文字"}`;
+  return `${line}\n${title}\n${line}\n${displayText}`;
 }
 
 async function uploadOne(file) {
@@ -601,6 +620,7 @@ function pollResult(taskId) {
   return new Promise((resolve, reject) => {
     timer = setInterval(async () => {
       count += 1;
+      showMessage(`正在识别... ${count} 秒`, "info");
 
       if (cancelRequested) {
         clearInterval(timer);
